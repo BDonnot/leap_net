@@ -45,7 +45,7 @@ setup(name='leap_net',
       install_requires=pkgs["required"],
       extras_require=pkgs["extras"],
       zip_safe=False,
-      entry_points= {
+      entry_points={
           'console_scripts': []
      }
 )

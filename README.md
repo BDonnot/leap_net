@@ -63,9 +63,121 @@ presented in the paper. **NB** as of writing, a commercial solver was used to co
 port the code to use the [Grid2Op](https://github.com/rte-france/Grid2Op) framework instead.
 
 ### Use the LEAP Net
-We also provide a simple implement of the LEAP Net that can be use as a any `tf.keras` in the following way:
 
-TODO
+#### Installation
+We also provide a simple implement of the LEAP Net that can be use as a any `tf.keras` layer. First you have to 
+download this github repository:
+```bash
+git clone https://github.com/BDonnot/leap_net.git
+cd leap_net
+```
+Then you need to install it (we strongly encourage to install it in a virtual envrionment):
+```bash
+pip install -U .
+```
+Then, **as all python packages installed from source** you need to change the current working directory to use this
+module:
+```bash
+cd ..
+rm -rf leap_net  # optionnally you can also delete the repository
+```
+In the future, to ease the installation process, we might provide a version of this package on pypi soon, 
+but haven't done that at the moment. If you would like this feature, write us an issue on github.
+
+#### Usage
+Once installed, this package provide a keras-compatible of the `Ltau` block defined in the cited papers. Supposes you 
+have at your disposal:
+- a `X` matrix of dimension (nb_row, dim_x)
+- a `T` matrix of dimension (nb_row, dim_tau)
+- a `Y` matrix of dimentsion (nb_row, dim_x)
+
+```python
+import tensorflow as tf
+from tensorflow.keras.layers import Input
+from tensorflow.keras.models import Model
+from leap_net import Ltau
+
+# create the keras model
+x = Input(shape=(dim_x,), name="x")
+tau = Input(shape=(dim_tau,), name="tau")
+res_Ltau = Ltau()((x, tau))
+model = Model(inputs=[x, tau], outputs=[res_Ltau])
+
+# "compile" the model with a given optimizer
+adam_ = tf.optimizers.Adam(lr=1e-3)
+model.compile(optimizer=adam_, loss='mse')
+# train it
+model.fit(x=[X, T], y=[Y], epochs=200, batch_size=32, verbose=False)
+
+# make prediction out of it
+y_hat = model.predict([X, T])
+```
+
+Of course, it is more than recommended to first encode your input data `X` with an encore denoted by `E` on the paper
+and then decode them with a "decoder" denoted by `D` in the papers. An example of such a model is:
+```python
+import tensorflow as tf
+from tensorflow.keras.layers import Input, Activation, Dense
+from tensorflow.keras.models import Model
+from leap_net import Ltau
+
+# create the keras model
+x = Input(shape=(dim_x,), name="x")
+tau = Input(shape=(dim_tau,), name="tau")
+
+## create E, for example with 2 layers of size "layer_size"
+layer1 = Dense(layer_size)(x)
+layer1 = Activation("relu")(layer1)
+
+layer2 = Dense(layer_size)(x)
+layer2 = Activation("relu")(layer1)
+# layer2 is the output of E.
+
+## this is Ltau
+res_Ltau = Ltau()((layer2, tau))
+
+## now create D, in this case hidden layer, for example
+layer4 = Dense(layer_size)(res_Ltau)
+layer4 = Activation("relu")(layer4)
+
+# and make the standard (if you do a regression) linear layer for the output
+output = Dense(dim_y)(layer4)
+
+model = Model(inputs=[x, tau], outputs=[output])
+
+# "compile" the model with a given optimizer
+adam_ = tf.optimizers.Adam(lr=1e-3)
+model.compile(optimizer=adam_, loss='mse')
+# train it
+model.fit(x=[X, T], y=[Y], epochs=200, batch_size=32, verbose=False)
+
+# make prediction out of it
+y_hat = model.predict([X, T])
+```
+
+**NB** We think the variable we use above are transparent, and we let the user of this work fine tune the learning
+rate, the optimizer, the number of epochs the even the size of the batch to suit their purpose. 
+
+**NB** To use this model easily, we suppose you already format your dataset to have the shape `{(x_i, τ_i, y_i)}` and
+in particular that you have a pre-defined encoding of your modulator `τ` in the form of a vector. The performance of
+the LEAP Net can vary depending on the encoding you choose for `τ`. More information will be provided in the near 
+future when we will release a port of the code we used to get our results for the neurcomputing paper. We remind
+that this port of the code will not be strictly equivalent to the original implementation of the paper that uses a 
+proprietary powerflow as this code will use the open source [Grid2Op](https://github.com/rte-france/Grid2Op) framework, 
+that as not available when the paper was first submitted.
 
 ## Cite this work
-TODO
+If you use this work please cite:
+```
+@article{DONON2020,
+title = "LEAP nets for system identification and application to power systems",
+journal = "Neurocomputing",
+year = "2020",
+issn = "0925-2312",
+doi = "https://doi.org/10.1016/j.neucom.2019.12.135",
+url = "http://www.sciencedirect.com/science/article/pii/S0925231220305051",
+author = "B. Donon and B. Donnot and I. Guyon and Z. Liu and A. Marot and P. Panciatici and M. Schoenauer",
+keywords = "System identification, Latent space, Residual networks, LEAP Net, Power systems",
+abstract = "Using neural network modeling, we address the problem of system identification for continuous multivariate systems, whose structures vary around an operating point. Structural changes in the system are of combinatorial nature, and some of them may be very rare; they may be actionable for the purpose of controlling the system. Although our ultimate goal is both system identification and control, we only address the problem of identification in this paper. We propose and study a novel neural network architecture called LEAP net, for Latent Encoding of Atypical Perturbation. Our method maps system structure changes to neural net structure changes, using structural actionable variables. We demonstrate empirically that LEAP nets can be trained with a natural observational distribution, very concentrated around a “reference” operating point of the system, and yet generalize to rare (or unseen) structural changes. We validate the generalization properties of LEAP nets theoretically in particular cases. We apply our technique to power transmission grids, in which high voltage lines are disconnected and re-connected with one-another from time to time, either accidentally or willfully. We discuss extensions of our approach to actionable variables, which are continuous (instead of discrete, in the case of our application) and make connections between our problem setting, transfer learning, causal inference, and reinforcement learning."
+}
+```

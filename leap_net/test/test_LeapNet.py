@@ -1,3 +1,11 @@
+# Copyright (c) 2019-2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
+
 import logging
 import os
 import numpy as np
@@ -17,7 +25,7 @@ class Test(unittest.TestCase):
     def setUp(self):
         self.tol = 3e-6  # use to compare results that should be strictly equal, up to numerical error
         self.tol_learn = 1e-2  # use to compare results from a test set
-        
+
         # to have "reproducible" results
         np.random.seed(1)
         tf.random.set_seed(1)
@@ -124,6 +132,10 @@ class Test(unittest.TestCase):
         res = model.predict([X_test, TAU_test])
         assert np.mean(np.abs(res - Y_test)) <= self.tol_learn, "problem with l1"
         assert np.max(np.abs(res - Y_test)) <= self.tol_learn, "problem with linf"
+
+# TODO test saving / loading
+# TODO test name and graph visualizing
+# TODO test resnet too
 
 
 if __name__ == "__main__":

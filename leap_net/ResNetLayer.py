@@ -9,50 +9,61 @@
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import add as tfk_add
-from tensorflow.keras.layers import multiply as tfk_multiply
 
 import tensorflow as tf
 
 import pdb
 
 
-class Ltau(Layer):
+class ResNetLayer(Layer):
     """
-    This layer implements the Ltau layer.
+    This layer implements the ResNet block
 
-    This kind of leap net layer computes, from their input `x`: `d.(e.x * tau)` where `.` denotes the
-    matrix multiplication and `*` the elementwise multiplication.
+    This is experimental, and any usage of another resnet implementation is probably better suited than this one.
 
     """
-    def __init__(self, initializer='glorot_uniform', use_bias=True, trainable=True, name=None, **kwargs):
-        super(Ltau, self).__init__(trainable=trainable, name=name, **kwargs)
+    def __init__(self,
+                 units,
+                 initializer='glorot_uniform',
+                 use_bias=True,
+                 trainable=True,
+                 name=None,
+                 activation=None,
+                 **kwargs):
+        super(ResNetLayer, self).__init__(trainable=trainable, name=name, **kwargs)
         self.initializer = initializer
-        self.use_bias=use_bias
+        self.use_bias = use_bias
+        self.units = int(units)
+        self.activation = activation
+
         self.e = None
         self.d = None
 
     def build(self, input_shape):
-        is_x, is_tau = input_shape
         nm_e = None
         nm_d = None
         if self.name is not None:
             nm_e = '{}_e'.format(self.name)
             nm_d = '{}_e'.format(self.name)
-        self.e = Dense(is_tau[-1],
+
+        self.e = Dense(self.units,
                        kernel_initializer=self.initializer,
                        use_bias=self.use_bias,
                        trainable=self.trainable,
                        name=nm_e)
-        self.d = Dense(is_x[-1],
+        self.d = Dense(input_shape[-1],
                        kernel_initializer=self.initializer,
-                       use_bias=False,
+                       use_bias=self.use_bias,
                        trainable=self.trainable,
                        name=nm_d)
 
     def call(self, inputs):
         x, tau = inputs
         tmp = self.e(x)
-        tmp = tfk_multiply([tau, tmp])  # element wise multiplication
+        if self.activation is not None:
+            tmp = self.activation(tmp)
         tmp = self.d(tmp)
+        if self.activation is not None:
+            tmp = self.activation(tmp)
         res = tfk_add([x, tmp])
         return res
