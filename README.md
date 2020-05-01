@@ -47,13 +47,24 @@ To know more about the leap Net, you can have a look at the
 ESANN conference.
 
 It has been my main focus during my PhD titled
-[Deep learning methods for predicting flows in power grids : novel architectures and algorithms](https://tel.archives-ouvertes.fr/tel-02045873/document)
+[Deep learning methods for predicting flows in power grids : novel architectures and algorithms
+](https://tel.archives-ouvertes.fr/tel-02045873/document)
 also available online.
 
 More recently, some analytical proofs and further development where published in the paper 
-[LEAP Nets for System Identification and Application to Power Systems](https://www.sciencedirect.com/science/article/abs/pii/S0925231220305051)
+[LEAP Nets for System Identification and Application to Power Systems
+](https://www.sciencedirect.com/science/article/abs/pii/S0925231220305051)
 
 ## Use the leap net
+
+### Reproducing results of the neuro computing paper.
+The repository [neurocomputing_paper](./neurocomputing_paper) contains the necessary material to reproduce the figures
+presented in the paper. **NB** as of writing, a commercial solver was used to compute the powerflows. We are trying to 
+port the code to use the [Grid2Op](https://github.com/rte-france/Grid2Op) framework instead.
+
+### Use the LEAP Net
+We also provide a simple implement of the LEAP Net that can be use as a any `tf.keras` in the following way:
+
 TODO
 
 ## Cite this work
