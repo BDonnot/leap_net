@@ -16,6 +16,9 @@ pkgs = {
         "tensorflow"
     ],
     "extras": {
+        "recommended": [
+            "grid2op"
+        ]
     }
 }
 

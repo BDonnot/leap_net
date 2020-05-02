@@ -128,3 +128,12 @@ dmypy.json
 # Pyre type checker
 .pyre/
 .idea/
+
+
+# datasets
+training_set
+test_set
+supertest_set
+output_test
+train.py
+generate_data.py

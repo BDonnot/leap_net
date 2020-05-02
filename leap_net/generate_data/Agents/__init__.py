@@ -6,13 +6,8 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-from leap_net.Ltau import Ltau
-from leap_net.ResNetLayer import ResNetLayer
+from leap_net.generate_data.Agents.RandomNN1 import RandomNN1
+from leap_net.generate_data.Agents.RandomN1 import RandomN1
+from leap_net.generate_data.Agents.RandomN2 import RandomN2
 
-__all__ = ["Ltau", "ResNetLayer"]
-
-try:
-    from leap_net.generate_data import generate_dataset
-    __all__ += ["generate_dataset"]
-except ImportError:
-    pass
+__all__ = ["RandomNN1", "RandomN2", "RandomN1"]
