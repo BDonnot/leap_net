@@ -64,7 +64,73 @@ port the code to use the [Grid2Op](https://github.com/rte-france/Grid2Op) framew
 
 ### Use the LEAP Net
 
-#### Installation
+#### Setting up
+##### Quick and dirty way
+Of course, this way of doing is absolutely not recommended. By doing it you need to make sure the license of your
+own code is compatible with the license of this specific package etc. You have more information on this topic in the
+[LICENSE](LICENSE) file.
+
+The most simple way to use the LEAP Net, and especially the Ltau module is to define this class in your project:
+```python
+# Copyright (c) 2019-2020, RTE (https://www.rte-france.com)
+# See AUTHORS.txt
+# This Source Code Form is subject to the terms of the Mozilla Public License, version 2.0.
+# If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
+# you can obtain one at http://mozilla.org/MPL/2.0/.
+# SPDX-License-Identifier: MPL-2.0
+# This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
+
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import add as tfk_add
+from tensorflow.keras.layers import multiply as tfk_multiply
+
+
+class Ltau(Layer):
+    """
+    This layer implements the Ltau layer.
+
+    This kind of leap net layer computes, from their input `x`: `d.(e.x * tau)` where `.` denotes the
+    matrix multiplication and `*` the elementwise multiplication.
+
+    """
+    def __init__(self, initializer='glorot_uniform', use_bias=True, trainable=True, name=None, **kwargs):
+        super(Ltau, self).__init__(trainable=trainable, name=name, **kwargs)
+        self.initializer = initializer
+        self.use_bias=use_bias
+        self.e = None
+        self.d = None
+
+    def build(self, input_shape):
+        is_x, is_tau = input_shape
+        nm_e = None
+        nm_d = None
+        if self.name is not None:
+            nm_e = '{}_e'.format(self.name)
+            nm_d = '{}_d'.format(self.name)
+        self.e = Dense(is_tau[-1],
+                       kernel_initializer=self.initializer,
+                       use_bias=self.use_bias,
+                       trainable=self.trainable,
+                       name=nm_e)
+        self.d = Dense(is_x[-1],
+                       kernel_initializer=self.initializer,
+                       use_bias=False,
+                       trainable=self.trainable,
+                       name=nm_d)
+
+    def call(self, inputs):
+        x, tau = inputs
+        tmp = self.e(x)
+        tmp = tfk_multiply([tau, tmp])  # element wise multiplication
+        tmp = self.d(tmp)
+        res = tfk_add([x, tmp])
+        return res
+```
+This is the complete code of the Ltau module that you can use as any keras layer.
+
+
+##### Clean installation (from source)
 We also provide a simple implement of the LEAP Net that can be use as a any `tf.keras` layer. First you have to 
 download this github repository:
 ```bash
@@ -84,7 +150,7 @@ rm -rf leap_net  # optionnally you can also delete the repository
 In the future, to ease the installation process, we might provide a version of this package on pypi soon, 
 but haven't done that at the moment. If you would like this feature, write us an issue on github.
 
-#### Usage
+#### LeapNet usage
 Once installed, this package provide a keras-compatible of the `Ltau` block defined in the cited papers. Supposes you 
 have at your disposal:
 - a `X` matrix of dimension (nb_row, dim_x)
@@ -95,7 +161,7 @@ have at your disposal:
 import tensorflow as tf
 from tensorflow.keras.layers import Input
 from tensorflow.keras.models import Model
-from leap_net import Ltau
+from leap_net import Ltau  # this import might change if you use the "quick and dirty way".
 
 # create the keras model
 x = Input(shape=(dim_x,), name="x")
@@ -119,7 +185,7 @@ and then decode them with a "decoder" denoted by `D` in the papers. An example o
 import tensorflow as tf
 from tensorflow.keras.layers import Input, Activation, Dense
 from tensorflow.keras.models import Model
-from leap_net import Ltau
+from leap_net import Ltau  # this import might change if you use the "quick and dirty way".
 
 # create the keras model
 x = Input(shape=(dim_x,), name="x")

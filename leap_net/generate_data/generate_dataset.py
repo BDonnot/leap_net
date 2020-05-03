@@ -25,7 +25,7 @@ def get_agent(env, agent_name, **kwargsagent):
         res = RandomNN1(env.action_space, **kwargsagent)
     elif agent_name == "random_n1":
         res = RandomN1(env.action_space, **kwargsagent)
-    elif agent_name == "random_n1":
+    elif agent_name == "random_n2":
         res = RandomN2(env.action_space, **kwargsagent)
     else:
         raise NotImplementedError()

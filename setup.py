@@ -17,7 +17,8 @@ pkgs = {
     ],
     "extras": {
         "recommended": [
-            "grid2op"
+            "grid2op",
+            "pandas"
         ]
     }
 }

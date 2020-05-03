@@ -136,4 +136,13 @@ test_set
 supertest_set
 output_test
 train.py
+!neurocomputing_paper/train.py
 generate_data.py
+!neurocomputing_paper/generate_data.py
+liketrain_set_*
+logs
+logs_10epoch
+output_test
+supertest_set
+test_set
+training_set_*

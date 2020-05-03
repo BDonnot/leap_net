@@ -17,7 +17,8 @@ import pdb
 
 class ResNetLayer(Layer):
     """
-    This layer implements the ResNet block
+    This layer implements a "ResNet block". If inputs are `x` the "resnet block" here produce the outputs:
+    `y` = `x` + `act( Dense(dim_x)(act(Dense(layer_size)(x))) )`
 
     This is experimental, and any usage of another resnet implementation is probably better suited than this one.
 
@@ -58,12 +59,11 @@ class ResNetLayer(Layer):
                        name=nm_d)
 
     def call(self, inputs):
-        x, tau = inputs
-        tmp = self.e(x)
+        tmp = self.e(inputs)
         if self.activation is not None:
             tmp = self.activation(tmp)
         tmp = self.d(tmp)
         if self.activation is not None:
             tmp = self.activation(tmp)
-        res = tfk_add([x, tmp])
+        res = tfk_add([inputs, tmp])
         return res

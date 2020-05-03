@@ -11,10 +11,6 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import add as tfk_add
 from tensorflow.keras.layers import multiply as tfk_multiply
 
-import tensorflow as tf
-
-import pdb
-
 
 class Ltau(Layer):
     """
@@ -32,12 +28,12 @@ class Ltau(Layer):
         self.d = None
 
     def build(self, input_shape):
-        is_x, is_tau = input_shape
+        is_x, is_tau = input_shape  # is for input_shape
         nm_e = None
         nm_d = None
         if self.name is not None:
             nm_e = '{}_e'.format(self.name)
-            nm_d = '{}_e'.format(self.name)
+            nm_d = '{}_d'.format(self.name)
         self.e = Dense(is_tau[-1],
                        kernel_initializer=self.initializer,
                        use_bias=self.use_bias,
