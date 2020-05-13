@@ -9,6 +9,7 @@
 from leap_net.Ltau import Ltau
 from leap_net.ResNetLayer import ResNetLayer
 
+__version__ = "0.0.2"
 __all__ = ["Ltau", "ResNetLayer"]
 
 try:

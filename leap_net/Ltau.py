@@ -45,7 +45,15 @@ class Ltau(Layer):
                        trainable=self.trainable,
                        name=nm_d)
 
-    def call(self, inputs):
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'initializer': self.initializer,
+            'use_bias': self.use_bias
+        })
+        return config
+
+    def call(self, inputs, **kwargs):
         x, tau = inputs
         tmp = self.e(x)
         tmp = tfk_multiply([tau, tmp])  # element wise multiplication
