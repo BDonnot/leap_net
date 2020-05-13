@@ -58,7 +58,17 @@ class ResNetLayer(Layer):
                        trainable=self.trainable,
                        name=nm_d)
 
-    def call(self, inputs):
+    def get_config(self):
+        config = super().get_config().copy()
+        config.update({
+            'initializer': self.initializer,
+            'use_bias': self.use_bias,
+            "units": self.units,
+            "activation": self.activation
+        })
+        return config
+
+    def call(self, inputs, **kwargs):
         tmp = self.e(inputs)
         if self.activation is not None:
             tmp = self.activation(tmp)
