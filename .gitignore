@@ -147,3 +147,4 @@ supertest_set
 test_set
 training_set_*
 leap_net/train/tf_logs/
+leap_net/train/model_saved/

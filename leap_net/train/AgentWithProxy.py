@@ -6,9 +6,11 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 import os
+import json
+import warnings
 
 import numpy as np
-import warnings
+from collections.abc import Iterable
 from grid2op.Agent import BaseAgent
 
 import tensorflow as tf
@@ -19,8 +21,7 @@ with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
     from tensorflow.keras.models import Sequential, Model
     from tensorflow.keras.layers import Activation
-    from tensorflow.keras.layers import Input, Lambda, subtract, add
-    import tensorflow.keras.backend as K
+    from tensorflow.keras.layers import Input
 
 from leap_net.LtauNoAdd import LtauNoAdd
 
@@ -46,7 +47,9 @@ class AgentWithProxy(BaseAgent):
                  lr=1e-4,
                  name="leap_net",
                  logdir="tf_logs",
-                 update_tensorboard=256  # tensorboard is updated every XXX training iterations
+                 update_tensorboard=256,  # tensorboard is updated every XXX training iterations
+                 save_freq=256,  # model is saved every save_freq training iterations
+                 ext="h5",  # extension of the file in which you want to save the proxy
                  ):
         BaseAgent.__init__(self, agent_action.action_space)
         self.agent_action = agent_action
@@ -56,9 +59,6 @@ class AgentWithProxy(BaseAgent):
         self.batch_size = batch_size
         self.last_id = 0
         self.train_iter = 0
-        self.attr_x = attr_x
-        self.attr_y = attr_y
-        self.attr_tau = attr_tau
 
         self.__db_full = False  # is the "training database" full
         self.__is_init = False  # is this model initiliazed
@@ -83,11 +83,15 @@ class AgentWithProxy(BaseAgent):
         self._sd_tau = None
 
          # leap net model
-        self._model = None
+        # TODO refacto that as "proxy" with the serializing and all that in there
         self.sizes_enc = sizes_enc
         self.sizes_main = sizes_main
         self.sizes_out = sizes_out
         self.dtype = np.float32
+        self.attr_x = attr_x
+        self.attr_y = attr_y
+        self.attr_tau = attr_tau
+        self._model = None
 
         # model optimizer
         self._lr = lr
@@ -103,6 +107,11 @@ class AgentWithProxy(BaseAgent):
             logpath = None
             self._tf_writer = None
         self.update_tensorboard = update_tensorboard
+        self.save_freq = save_freq
+
+        # save load
+        self.ext = ext
+        self.save_path = None
 
     def init(self, obs):
         """
@@ -168,10 +177,13 @@ class AgentWithProxy(BaseAgent):
         return None, tfko.Adam(learning_rate=self._lr)
 
     def build_model(self):
+        if self._model is not None:
+            # model is already initliazed
+            return
         self._model = Sequential()
         inputs_x = [Input(shape=(el,), name="x_{}".format(nm_)) for el, nm_ in
                     zip(self._sz_x, self.attr_x)]
-        inputs_tau = [Input(shape=(el,), name="x_{}".format(nm_)) for el, nm_ in
+        inputs_tau = [Input(shape=(el,), name="tau_{}".format(nm_)) for el, nm_ in
                       zip(self._sz_tau, self.attr_tau)]
 
         # encode each data type in initial layers
@@ -322,11 +334,18 @@ class AgentWithProxy(BaseAgent):
             self.__db_full = True
         self.last_id %= self.max_row_training_set
 
-    def train(self):
+    def _train_proxy(self):
         """
         train the leap net model
 
         returns the loss
+
+        Notes
+        ------
+        This function will do one training iteration for the proxy.
+
+        To train the proxy use self.train(env) !
+
         """
         if self.__db_full:
             tmp_max = self.max_row_training_set
@@ -353,9 +372,159 @@ class AgentWithProxy(BaseAgent):
     def act(self, obs, reward, done=False):
         self.store_obs(obs)
         if self.last_id % self.batch_size == 0:
-            batch_losses = self.train()
+            batch_losses = self._train_proxy()
             self._save_tensorboard(batch_losses)
+            self._save_model()
         return self.agent_action.act(obs, reward, done)
+
+    def _save_model(self):
+        if self.train_iter % self.save_freq == 0:
+            self.save(self.save_path)
+
+    def train(self, env, total_training_step, save_path=None, load_path=None):
+        """
+        Completely train the proxy
+
+        Parameters
+        ----------
+        env
+        total_training_step
+
+        Returns
+        -------
+
+        """
+        obs = env.reset()
+        done = False
+        reward = env.reward_range[0]
+        nb_ts = 0
+        self.save_path = save_path
+        if self.save_path is not None:
+            if not os.path.exists(self.save_path):
+                os.mkdir(self.save_path)
+        if load_path is not None:
+            self.load(load_path)
+            nb_ts = self.train_iter
+        with tqdm(total=total_training_step) as pbar:
+            # update the progress bar
+            pbar.update(nb_ts)
+            while not done:
+                act = self.act(obs, reward, done)
+                obs, reward, done, info = env.step(act)
+                if done:
+                    obs = env.reset()
+                    done = False
+                # TODO: nope i didn't do a training set there :-/
+                pbar.update(1)
+                nb_ts += 1
+                if nb_ts > total_training_step:
+                    break
+
+    # save load model
+    def _get_path_nn(self, path, name):
+        if name is None:
+            path_model = path
+        else:
+            path_model = os.path.join(path, name)
+        return path_model
+
+    def save(self, path):
+        """
+        Part of the l2rpn_baselines interface, this allows to save a model. Its name is used at saving time. The
+        same name must be reused when loading it back.
+
+        Parameters
+        ----------
+        path: ``str``
+            The path where to save the agent.
+
+        """
+        if path is not None:
+            tmp_me = os.path.join(path, self.name)
+            if not os.path.exists(tmp_me):
+                os.mkdir(tmp_me)
+            path_model = self._get_path_nn(path, self.name)
+            self._save_dims_scalers(path_model)
+            self._model.save('{}.{}'.format(os.path.join(path_model, self.name), self.ext))
+
+    def load(self, path):
+        if path is not None:
+            path_model = self._get_path_nn(path, self.name)
+            self._from_dims_scalers(path_model)
+            self.build_model()
+            self._model.load_weights('{}.{}'.format(os.path.join(path_model, self.name), self.ext))
+
+    def _save_dims_scalers(self, path_model):
+        """save the dimensions of the models and the scalers"""
+        json_nm = "info.json"
+        me = self._to_dict()
+        with open(os.path.join(path_model, json_nm), "w", encoding="utf-8") as f:
+            json.dump(obj=me, fp=f)
+
+    def _from_dims_scalers(self, path_model):
+        json_nm = "info.json"
+        with open(os.path.join(path_model, json_nm), "r", encoding="utf-8") as f:
+            me = json.load(f)
+        self._from_dict(me)
+
+    def _to_dict(self):
+        res = {}
+        res["attr_x"] = [str(el) for el in self.attr_x]
+        res["attr_tau"] = [str(el) for el in self.attr_tau]
+        res["attr_y"] = [str(el) for el in self.attr_y]
+
+        res["_m_x"] = []
+        for el in self._m_x:
+            self._save_dict(res["_m_x"], el)
+        res["_m_y"] = []
+        for el in self._m_y:
+            self._save_dict(res["_m_y"], el)
+        res["_m_tau"] = []
+        for el in self._m_tau:
+            self._save_dict(res["_m_tau"], el)
+        res["_sd_x"] = []
+        for el in self._sd_x:
+            self._save_dict(res["_sd_x"], el)
+        res["_sd_y"] = []
+        for el in self._sd_y:
+            self._save_dict(res["_sd_y"], el)
+        res["_sd_tau"] = []
+        for el in self._sd_tau:
+            self._save_dict(res["_sd_tau"], el)
+
+        res["_sz_x"] = [int(el) for el in self._sz_x]
+        res["_sz_y"] = [int(el) for el in self._sz_y]
+        res["_sz_tau"] = [int(el) for el in self._sz_tau]
+        res["train_iter"] = int(self.train_iter)
+        return res
+
+    def _save_dict(self, li, val):
+        if isinstance(val, Iterable):
+            li.append([float(el) for el in val])
+        else:
+            li.append(float(val))
+
+    def _from_dict(self, dict_):
+        """modify self! """
+        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
+        self.attr_tau = tuple([str(el) for el in dict_["attr_tau"]])
+        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
+
+        for key in ["_m_x", "_m_y", "_m_tau", "_sd_x", "_sd_y", "_sd_tau"]:
+            setattr(self, key, [])
+            for el in dict_[key]:
+                self._add_attr(key, el)
+
+        self._sz_x = [int(el) for el in dict_["_sz_x"]]
+        self._sz_y = [int(el) for el in dict_["_sz_y"]]
+        self._sz_tau = [int(el) for el in dict_["_sz_tau"]]
+        self.train_iter = int(dict_["train_iter"])
+
+    def _add_attr(self, attr_nm, val):
+        if isinstance(val, Iterable):
+            getattr(self, attr_nm).append(np.array(val).astype(self.dtype))
+        else:
+            getattr(self, attr_nm).append(self.dtype(val))
 
     def _save_tensorboard(self, batch_losses):
         """save all the information needed in tensorboard."""
@@ -381,7 +550,7 @@ class AgentWithProxy(BaseAgent):
 if __name__ == "__main__":
     import grid2op
     from grid2op.Parameters import Parameters
-    from leap_net.generate_data.Agents import RandomN1
+    from leap_net.generate_data.Agents import RandomN1, RandomNN1
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
 
@@ -394,23 +563,12 @@ if __name__ == "__main__":
     param.NB_TIMESTEP_COOLDOWN_LINE = 0
     param.NB_TIMESTEP_COOLDOWN_SUB = 0
     env = grid2op.make(param=param, backend=LightSimBackend())
-
-    obs = env.reset()
-    agent = RandomN1(env.action_space)
+    agent = RandomNN1(env.action_space, p=0.5)
     agent_with_proxy = AgentWithProxy(agent)
 
-    done = False
-    reward = env.reward_range[0]
-    nb_ts = 0
-    with tqdm(total=total_train) as pbar:
-        while not done:
-            act = agent_with_proxy.act(obs, reward, done)
-            obs, reward, done, info = env.step(act)
-            if done:
-                obs = env.reset()
-                done = False
-            pbar.update(1)
-            nb_ts += 1
-            if nb_ts > total_train:
-                break
+    agent_with_proxy.train(env,
+                           total_train,
+                           save_path="model_saved",
+                           load_path="model_saved"
+                           )
 
