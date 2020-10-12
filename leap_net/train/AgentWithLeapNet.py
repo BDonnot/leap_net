@@ -43,10 +43,10 @@ class AgentWithProxy(BaseAgent):
                  sizes_enc=(20, 20, 20),
                  sizes_main=(150, 150, 150),
                  sizes_out=(100, 40),
-                 lr=1e-5,
+                 lr=1e-4,
                  name="leap_net",
                  logdir="tf_logs",
-                 update_tensorboard=256
+                 update_tensorboard=256  # tensorboard is updated every XXX training iterations
                  ):
         BaseAgent.__init__(self, agent_action.action_space)
         self.agent_action = agent_action
@@ -59,8 +59,10 @@ class AgentWithProxy(BaseAgent):
         self.attr_x = attr_x
         self.attr_y = attr_y
         self.attr_tau = attr_tau
-        self.__db_full = False
-        self.__is_init = False
+
+        self.__db_full = False  # is the "training database" full
+        self.__is_init = False  # is this model initiliazed
+        self.__need_save_graph = True  # save the tensorflow computation graph
 
         # sizes
         self._sz_x = None
@@ -125,8 +127,8 @@ class AgentWithProxy(BaseAgent):
             sz = arr_.size
             self._sz_x.append(sz)
             self._my_x.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_x.append(self._get_mean(arr_, attr_nm))
-            self._sd_x.append(self._get_sd(arr_, attr_nm))
+            self._m_x.append(self._get_mean(arr_, obs, attr_nm))
+            self._sd_x.append(self._get_sd(arr_, obs, attr_nm))
 
         # save the output y
         self._my_y = []
@@ -138,8 +140,8 @@ class AgentWithProxy(BaseAgent):
             sz = arr_.size
             self._sz_y.append(sz)
             self._my_y.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_y.append(self._get_mean(arr_, attr_nm))
-            self._sd_y.append(self._get_sd(arr_, attr_nm))
+            self._m_y.append(self._get_mean(arr_, obs, attr_nm))
+            self._sd_y.append(self._get_sd(arr_, obs, attr_nm))
 
         # save the tau vectors
         self._my_tau = []
@@ -151,8 +153,8 @@ class AgentWithProxy(BaseAgent):
             sz = arr_.size
             self._sz_tau.append(sz)
             self._my_tau.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_tau.append(self._get_mean(arr_, attr_nm))
-            self._sd_tau.append(self._get_sd(arr_, attr_nm))
+            self._m_tau.append(self._get_mean(arr_, obs, attr_nm))
+            self._sd_tau.append(self._get_sd(arr_, obs, attr_nm))
 
         # now build the tensorflow model
         self.build_model()
@@ -220,17 +222,59 @@ class AgentWithProxy(BaseAgent):
         self._schedule_lr_model, self._optimizer_model = self.make_optimiser()
         self._model.compile(loss=model_losses, optimizer=self._optimizer_model)
 
-    def _get_mean(self, arr_, attr_nm):
-        """
-        For the scaler, compute the mean that will be used to scale the data
-        """
-        return np.zeros(arr_.size, dtype=self.dtype)
+    def _get_adds_mults_from_name(self, obs, attr_nm):
+        if attr_nm in ["prod_p"]:
+            add_tmp = np.array([0.5 * (pmax + pmin) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)])
+            mult_tmp = np.array([1. / max((pmax - pmin), 0.) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)])
+        elif attr_nm in ["prod_q"]:
+            add_tmp = 0.
+            mult_tmp = np.array([max(abs(val), 1.0) for val in obs.prod_q])
+        elif attr_nm in ["load_p", "load_q"]:
+            add_tmp = np.array([val for val in getattr(obs, attr_nm)])
+            mult_tmp = 2
+        elif attr_nm in ["load_v", "prod_v", "v_or", "v_ex"]:
+            add_tmp = 0.
+            mult_tmp = np.array([val for val in getattr(obs, attr_nm)])
+        elif attr_nm == "hour_of_day":
+            add_tmp = 12.
+            mult_tmp = 1.0 / 12
+        elif attr_nm == "minute_of_hour":
+            add_tmp = 30.
+            mult_tmp = 1.0 / 30
+        elif attr_nm == "day_of_week":
+            add_tmp = 4.
+            mult_tmp = 1.0 / 4
+        elif attr_nm == "day":
+            add_tmp = 15.
+            mult_tmp = 1.0 / 15.
+        elif attr_nm in ["target_dispatch", "actual_dispatch"]:
+            add_tmp = 0.
+            mult_tmp = np.array([(pmax - pmin) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)])
+        elif attr_nm in ["a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex"]:
+            add_tmp = 0.
+            mult_tmp = np.array([max(val, 1.0) for val in getattr(obs, attr_nm)])
+        elif attr_nm == "line_status":
+            # encode back to 0: connected, 1: disconnected
+            add_tmp = 1.
+            mult_tmp = -1.0
+        else:
+            add_tmp = 0.
+            mult_tmp = 1.0
+        return add_tmp, mult_tmp
 
-    def _get_sd(self, arr_, attr_nm):
+    def _get_mean(self, arr_, obs, attr_nm):
         """
         For the scaler, compute the mean that will be used to scale the data
         """
-        return np.ones(arr_.size, dtype=self.dtype)
+        add_, mul = self._get_adds_mults_from_name(obs, attr_nm)
+        return add_
+
+    def _get_sd(self, arr_, obs, attr_nm):
+        """
+        For the scaler, compute the mean that will be used to scale the data
+        """
+        add_, mul_ = self._get_adds_mults_from_name(obs, attr_nm)
+        return mul_
 
     def _extract_obs(self, obs, attr_nm):
         """
@@ -295,7 +339,15 @@ class AgentWithProxy(BaseAgent):
         tmpx = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_x, self._m_x, self._sd_x)]
         tmpy = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_y, self._m_y, self._sd_y)]
         tmpt = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_tau, self._m_tau, self._sd_tau)]
+        if self._tf_writer is not None and self.__need_save_graph:
+            tf.summary.trace_on()
         batch_losses = self._model.train_on_batch((tmpx, tmpt), tmpy)
+        if self._tf_writer is not None and self.__need_save_graph:
+            with self._tf_writer.as_default():
+                tf.summary.trace_export("model-graph", 0)
+            self.__need_save_graph = False
+            tf.summary.trace_off()
+        self.train_iter += 1
         return batch_losses
 
     def act(self, obs, reward, done=False):
@@ -332,7 +384,9 @@ if __name__ == "__main__":
     from leap_net.generate_data.Agents import RandomN1
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
+
     total_train = int(2e5)
+    env_name = "l2rpn_case14_sandbox"
 
     # generate the environment
     param = Parameters()
