@@ -6,6 +6,8 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
+import os
+import time
 import numpy as np
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -43,6 +45,10 @@ class BaseProxy(ABC):
 
         # the model
         self._model = None
+
+        # timers
+        self._time_predict = 0
+        self._time_train = 0
 
     #######################################################################
     ## All functions bellow should be implemented in your specific proxy ##
@@ -86,6 +92,55 @@ class BaseProxy(ABC):
         """should return a dictionary containing all the metadata of this class in a format that is compatible
         with json serialization.
         """
+        pass
+
+    @abstractmethod
+    def get_output_sizes(self):
+        """
+        Should return the list of the dimension of the output of the proxy.
+
+        This function should be overridden
+
+        Returns
+        -------
+
+        """
+        pass
+
+    @abstractmethod
+    def get_true_output(self, obs):
+        """
+        Returns, from the observation the true output that has been computed by the environment.
+
+        This "true output" is computed based on the observation and corresponds to what the proxy is meant to
+        approximate (but the reference)
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+
+        """
+        # TODO refactorize with another method maybe
+        pass
+
+    def get_attr_output_name(self, obs):
+        """
+        Get the name (that will be used when saving the model) of each ouput of the proxy.
+
+        It is recommended to overide this function
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+
+        """
+        return [f"output_{i}" for i, _ in enumerate(self.get_true_output(obs))]
 
     def store_obs(self, obs):
         """
@@ -133,7 +188,7 @@ class BaseProxy(ABC):
         """
         pass
 
-    def save_weights(self, path):
+    def save_weights(self, path, ext=".h5"):
         """
         save the weights of the neural network
         path is the full path (including file name and extension)
@@ -141,24 +196,32 @@ class BaseProxy(ABC):
         This function can be overridden (for example if your proxy does not use tensorflow or is made of multiple
         submodule that need to be saved independently)
 
-        """
-        self._model.save(path)
+        This function is used when loading back your proxy
 
-    def load_weights(self, path):
+        Notes
+        -----
+        We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
+
+        """
+        self._model.save(os.path.join(path, f"weights{ext}"))
+
+    def load_weights(self, path, ext=".h5"):
         """
         load the weight of the neural network
-        path is the full path (including file name and extension)
+        path is the full path (including file name and extension).
 
         This function can be overridden (for example if your proxy does not use tensorflow or is made of multiple
         submodule that need to be saved independently)
 
+        This function is used when loading back your proxy.
         Notes
         -----
         This function is only called when the metadata (number of layer, size of each layer etc.)
-         have been properly restored
-        """
+        have been properly restored
 
-        self._model.load_weights(path)
+        We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
+        """
+        self._model.load_weights(os.path.join(path, f"weights{ext}"))
 
     def _make_optimiser(self):
         """
@@ -166,11 +229,14 @@ class BaseProxy(ABC):
         parameters.
 
         This function can be overridden (for example if you don't use tensorflow).
+
+        It's not part of the public API that is used outside of your proxy (private method).
+
         """
         # schedule = tfko.schedules.InverseTimeDecay(self._lr, self._lr_decay_steps, self._lr_decay_rate)
         return None, tfko.Adam(learning_rate=self._lr)
 
-    def train_model(self, data):
+    def _train_model(self, data):
         """
         perform the training step. For model coded in tensorflow in a regular supervised learning
         setting it can be summarize as follow:
@@ -179,7 +245,16 @@ class BaseProxy(ABC):
 
             self._model.train_on_batch(*data)
 
+        This function is called with something like:
+
+        .. code-block:: python
+
+            data = self._extract_data(indx_train)
+            loss = self.train_model(data)
+
         This function can be overridden (for example if your proxy does not use tensorflow)
+
+        It's not part of the public API that is used outside of your proxy (private method).
 
         Parameters
         ----------
@@ -192,6 +267,47 @@ class BaseProxy(ABC):
 
         """
         return self._model.train_on_batch(*data)
+
+    def _make_predictions(self, data):
+        """
+        Make a prediction with the proxy on a new grid state.
+
+        It's analogous to the `train_model` but instead of training it gives the prediction of the neural network.
+
+        It's called with:
+
+        .. code-block:: python
+
+            data = self._extract_data([last_index])
+            predictions = self.make_predictions(data)
+
+        This function can be overridden (for example if your proxy does not use tensorflow)
+
+        It's not part of the public API that is used outside of your proxy (private method).
+
+        Parameters
+        ----------
+        data
+
+        Returns
+        -------
+
+        """
+        return self._model(data)
+
+    def _post_process(self, predicted_state):
+        """
+        This function is used to post process the data that are the output of the proxy.
+
+        Parameters
+        ----------
+        predicted_state
+
+        Returns
+        -------
+
+        """
+        return predicted_state
 
     def _extract_obs(self, obs, attr_nm):
         """
@@ -247,13 +363,39 @@ class BaseProxy(ABC):
 
         if tf_writer is not None and self.__need_save_graph:
             tf.summary.trace_on()
-        batch_losses = self._model.train_on_batch(*data)
+
+        beg_ = time.time()
+        batch_losses = self._train_model(data)
+        self._time_train += time.time() - beg_
         if tf_writer is not None and self.__need_save_graph:
             with tf_writer.as_default():
                 tf.summary.trace_export("model-graph", 0)
             self.__need_save_graph = False
             tf.summary.trace_off()
         return batch_losses
+
+    def predict(self):
+        """
+        Make the prediction using the proxy.
+
+        Prediction are made "on the fly", which means that the batch size is 1.
+
+        We do not recommend to override this function.
+
+        Returns
+        -------
+        res:
+            All the predictions made by the proxy. Note that these predictions should be directly comparable with
+            the input data and (so if a scaling is applied, they should be unscaled)
+        """
+        # TODO handle some batches here (needed with multi processing) especially store the last row used
+        # and use all the dataset between self.last_id and the last row used.
+        data = self._extract_data(np.array([self.last_id]))
+        beg_ = time.time()
+        res = self._make_predictions(data)
+        self._time_predict += time.time() - beg_
+        res = self._post_process(res)
+        return res
 
     def _save_dict(self, li, val):
         """
@@ -338,3 +480,11 @@ class BaseProxy(ABC):
             add_tmp = self.dtype(0.)
             mult_tmp = self.dtype(1.0)
         return add_tmp, mult_tmp
+
+    def get_total_predict_time(self):
+        """
+        get the total time spent to make the prediction with the proxy
+
+        We don't recommend to overide this function
+        """
+        return self._time_predict

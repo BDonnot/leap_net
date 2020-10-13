@@ -150,3 +150,4 @@ leap_net/train/tf_logs/
 leap_net/train/model_saved/
 leap_net/proxy/model_saved/
 leap_net/proxy/tf_logs/
+leap_net/proxy/model_results/

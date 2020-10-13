@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
+import copy
 import warnings
 import numpy as np
 
@@ -136,6 +137,9 @@ class ProxyLeapNet(BaseProxy):
         for attr_nm, inp in zip(self.attr_y, self._my_y):
             inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
 
+    def get_output_sizes(self):
+        return copy.deepcopy(self._sz_y)
+
     def init(self, obs):
         """
         Initialize all the meta data and the database for training
@@ -188,6 +192,25 @@ class ProxyLeapNet(BaseProxy):
             self._m_tau.append(self._get_mean(arr_, obs, attr_nm))
             self._sd_tau.append(self._get_sd(arr_, obs, attr_nm))
 
+    def get_true_output(self, obs):
+        """
+        Returns, from the observation the true output that has been computed by the environment.
+
+        This "true output" is computed based on the observation and corresponds to what the proxy is meant to
+        approximate (but the reference)
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+
+        """
+        res = []
+        for attr_nm in self.attr_y:
+            res.append(self._extract_obs(obs, attr_nm))
+        return res
+
     def get_metadata(self):
         """
         returns the metadata (model shapes, attribute used, sizes, etc.)
@@ -225,6 +248,9 @@ class ProxyLeapNet(BaseProxy):
         res["sizes_enc"] = [int(el) for el in self.sizes_enc]
         res["sizes_main"] = [int(el) for el in self.sizes_main]
         res["sizes_out"] = [int(el) for el in self.sizes_out]
+
+        res["_time_train"] = float(self._time_train)
+        res["_time_predict"] = float(self._time_predict)
         return res
 
     def save_tensorboard(self, tf_writer, training_iter, batch_losses):
@@ -261,6 +287,9 @@ class ProxyLeapNet(BaseProxy):
         self.sizes_main = [int(el) for el in dict_["sizes_main"]]
         self.sizes_out = [int(el) for el in dict_["sizes_out"]]
 
+        self._time_train = float(dict_["_time_train"])
+        self._time_predict = float(dict_["_time_predict"])
+
     def _extract_data(self, indx_train):
         """
         extract from the training dataset, the data with indexes indx_train
@@ -276,7 +305,39 @@ class ProxyLeapNet(BaseProxy):
         -------
 
         """
-        tmpx = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_x, self._m_x, self._sd_x)]
-        tmpy = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_y, self._m_y, self._sd_y)]
-        tmpt = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_tau, self._m_tau, self._sd_tau)]
+        tmpx = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_x, self._m_x, self._sd_x)]
+        tmpy = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_y, self._m_y, self._sd_y)]
+        tmpt = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_tau, self._m_tau, self._sd_tau)]
         return (tmpx, tmpt), tmpy
+
+    def _post_process(self, predicted_state):
+        """
+        This function is used to post process the data that are the output of the proxy.
+
+        Parameters
+        ----------
+        predicted_state
+
+        Returns
+        -------
+
+        """
+        tmp = [el.numpy() for el in predicted_state]
+        resy = [arr * sd_ + m_ for arr, m_, sd_ in zip(tmp, self._m_y, self._sd_y)]
+        return resy
+
+    def get_attr_output_name(self, obs):
+        """
+        Get the name (that will be used when saving the model) of each ouput of the proxy.
+
+        It is recommended to overide this function
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+
+        """
+        return copy.deepcopy(self.attr_y)

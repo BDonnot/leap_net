@@ -7,6 +7,7 @@
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 import os
 import json
+import re
 
 import numpy as np
 import tensorflow as tf
@@ -30,7 +31,7 @@ class AgentWithProxy(BaseAgent):
                  logdir="tf_logs",
                  update_tensorboard=256,  # tensorboard is updated every XXX training iterations
                  save_freq=256,  # model is saved every save_freq training iterations
-                 ext="h5",  # extension of the file in which you want to save the proxy
+                 ext=".h5",  # extension of the file in which you want to save the proxy
 
                  name="leap_net",
                  max_row_training_set=int(1e5),
@@ -52,6 +53,7 @@ class AgentWithProxy(BaseAgent):
         self.global_iter = 0
         self.train_iter = 0
         self.__is_init = False  # is this model initiliazed
+        self.is_training = True
 
         # proxy part
         self._proxy = ProxyLeapNet(name=name,
@@ -71,7 +73,11 @@ class AgentWithProxy(BaseAgent):
         self.save_freq = save_freq
 
         # save load
-        self.ext = ext
+        if re.match(r"^\.", ext) is None:
+            # add a point at the beginning of the extension
+            self.ext = f".{ext}"
+        else:
+            self.ext = ext
         self.save_path = None
 
     def init(self, obs):
@@ -94,11 +100,12 @@ class AgentWithProxy(BaseAgent):
     # agent interface
     def act(self, obs, reward, done=False):
         self.store_obs(obs)
-        batch_losses = self._proxy.train(tf_writer=self._tf_writer)
-        if batch_losses is not None:
-            self.train_iter += 1
-            self._save_tensorboard(batch_losses)
-            self._save_model()
+        if self.is_training:
+            batch_losses = self._proxy.train(tf_writer=self._tf_writer)
+            if batch_losses is not None:
+                self.train_iter += 1
+                self._save_tensorboard(batch_losses)
+                self._save_model()
         return self.agent_action.act(obs, reward, done)
 
     def store_obs(self, obs):
@@ -132,7 +139,7 @@ class AgentWithProxy(BaseAgent):
         -------
 
         """
-        obs = env.reset()
+        obs = self._reboot(env)
         done = False
         reward = env.reward_range[0]
         self.save_path = save_path
@@ -141,6 +148,7 @@ class AgentWithProxy(BaseAgent):
                 os.mkdir(self.save_path)
         if load_path is not None:
             self.load(load_path)
+        self.is_training = True
         with tqdm(total=total_training_step) as pbar:
             # update the progress bar
             pbar.update(self.global_iter)
@@ -151,14 +159,76 @@ class AgentWithProxy(BaseAgent):
                 # TODO handle multienv here
                 obs, reward, done, info = env.step(act)
                 if done:
-                    obs = env.reset()
+                    obs = self._reboot(env)
                     done = False
                 self.global_iter += 1
-                if self.global_iter > total_training_step:
-                    break
                 pbar.update(1)
+                if self.global_iter >= total_training_step:
+                    break
         # save the model at the end
         self.save(self.save_path)
+
+    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None):
+        """
+
+        Parameters
+        ----------
+        env
+        total_evaluation_step
+        load_path
+        save_path
+        metrics:
+            dictionary of function, with keys being the metrics name, and values the function that compute
+            this metric (on the whole output) that should be `metric_fun(y_true, y_pred)`
+
+        Returns
+        -------
+
+        """
+        obs = self._reboot(env)
+        done = False
+        reward = env.reward_range[0]
+        self.is_training = False
+
+        if load_path is not None:
+            self.load(load_path)
+            self.global_iter = 0
+            self.save_path = None  # disable the saving of the model
+
+        # TODO find a better approach for more general proxy that can adapt to grid of different size
+        sizes = self._proxy.get_output_sizes()
+        true_val = [np.zeros((total_evaluation_step, el), dtype=self._proxy.dtype) for el in sizes]
+        pred_val = [np.zeros((total_evaluation_step, el), dtype=self._proxy.dtype) for el in sizes]
+
+        with tqdm(total=total_evaluation_step) as pbar:
+            # update the progress bar
+            pbar.update(self.global_iter)
+
+            # and do the "gym loop"
+            while not done:
+                act = self.act(obs, reward, done)
+
+                # save the predictions and the reference
+                predictions = self._proxy.predict()
+                for arr_, pred_ in zip(pred_val, predictions):
+                    arr_[self.global_iter, :] = pred_.reshape(-1)
+                reality = self._proxy.get_true_output(obs)
+                for arr_, ref_ in zip(true_val, reality):
+                    arr_[self.global_iter, :] = ref_.reshape(-1)
+
+                # TODO handle multienv here (this might be more complicated!)
+                obs, reward, done, info = env.step(act)
+                if done:
+                    obs = self._reboot(env)
+                    done = False
+                self.global_iter += 1
+                pbar.update(1)
+                if self.global_iter >= total_evaluation_step:
+                    break
+
+        # save the results and compute the metrics
+        self._save_results(obs, save_path, metrics, pred_val, true_val)
+        # TODO save the x's too!
 
     def save(self, path):
         """
@@ -172,19 +242,24 @@ class AgentWithProxy(BaseAgent):
 
         """
         if path is not None:
-            tmp_me = os.path.join(path, self.get_name())
-            if not os.path.exists(tmp_me):
-                os.mkdir(tmp_me)
-            path_model = self._get_path_nn(path, self.get_name())
-            self._save_metadata(path_model)
-            self._proxy.save_weights('{}.{}'.format(os.path.join(path_model, self.get_name()), self.ext))
+            path_save = os.path.join(path, self.get_name())
+            if not os.path.exists(path_save):
+                os.mkdir(path_save)
+            self._save_metadata(path_save)
+            self._proxy.save_weights(path=path_save, ext=self.ext)
 
     def load(self, path):
         if path is not None:
-            path_model = self._get_path_nn(path, self.get_name())
+            # the following if is to be able to restore a file with possibly a different name...
+            if self.is_training:
+                path_model = self._get_path_nn(path, self.get_name())
+            else:
+                path_model = path
+            if not os.path.exists(path_model):
+                raise RuntimeError(f"You asked to load a model at \"{path_model}\" but there is nothing there.")
             self._load_metadata(path_model)
             self._proxy.build_model()
-            self._proxy.load_weights('{}.{}'.format(os.path.join(path_model, self.get_name()), self.ext))
+            self._proxy.load_weights(path=path, ext=self.ext)
 
     def get_name(self):
         return self._proxy.name
@@ -248,17 +323,74 @@ class AgentWithProxy(BaseAgent):
         if self.train_iter % self.save_freq == 0:
             self.save(self.save_path)
 
+    def _save_results(self, obs, save_path, metrics, pred_val, true_val):
+
+        # compute the metrics (if any)
+        dict_metrics = {}
+        dict_metrics["predict_step"] = int(self.global_iter)
+        dict_metrics["predict_time"] = float(self._proxy.get_total_predict_time())
+        dict_metrics["avg_pred_time_s"] = float(self._proxy.get_total_predict_time()) / float(self.global_iter)
+        if metrics is not None:
+            array_names = self._proxy.get_attr_output_name(obs)
+            for metric_name, metric_fun in metrics.items():
+                dict_metrics[metric_name] = {}
+                for nm, pred_, true_ in zip(array_names, pred_val, true_val):
+                    tmp = metric_fun(true_, pred_)
+                    # print the results and make sure the things are json serializable
+                    if isinstance(tmp, Iterable):
+                        print(f"{metric_name} for {nm}: {tmp}")
+                        dict_metrics[metric_name][nm] = [float(el) for el in tmp]
+                    else:
+                        print(f"{metric_name} for {nm}: {tmp:.2f}")
+                        dict_metrics[metric_name][nm] = float(tmp)
+
+        # save the numpy arrays (if needed)
+        if save_path is not None:
+            # save the proxy and the meta data
+            self.save(save_path)
+
+            # now the other data
+            array_names = self._proxy.get_attr_output_name(obs)
+            save_path = os.path.join(save_path, self.get_name())
+            if not os.path.exists(save_path):
+                os.mkdir(save_path)
+
+            for nm, pred_, true_ in zip(array_names, pred_val, true_val):
+                np.save(os.path.join(save_path, f"{nm}_pred.npy"), pred_)
+                np.save(os.path.join(save_path, f"{nm}_real.npy"), true_)
+            with open(os.path.join(save_path, "metrics.json"), "w", encoding="utf-8") as f:
+                json.dump(dict_metrics, fp=f, indent=4, sort_keys=True)
+        return dict_metrics
+
+    def _reboot(self, env):
+        """when an environment is "done" this function reset it and act a first time with the agent_action"""
+        # TODO skip and random start at some steps
+        done = False
+        reward = env.reward_range[0]
+        obs = env.reset()
+        obs, reward, done, info = env.step(self.agent_action.act(obs, reward, done))
+        while done:
+            # we restart until we find an environment that is not "game over"
+            obs = env.reset()
+            obs, reward, done, info = env.step(self.agent_action.act(obs, reward, done))
+        return obs
+
 
 if __name__ == "__main__":
     import grid2op
     from grid2op.Parameters import Parameters
-    from leap_net.generate_data.Agents import RandomN1, RandomNN1
+    from leap_net.generate_data.Agents import RandomN1, RandomNN1, RandomN2
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
+    from sklearn.metrics import mean_squared_error, mean_absolute_error  #, mean_absolute_percentage_error
 
     total_train = 11*12*int(2e5)
-    total_train = 4*int(1e5)
+    total_train = 12*int(1e5)
+    total_evaluation_step = int(1e4)
     env_name = "l2rpn_case14_sandbox"
+    model_name = "test_refacto2"
+    save_path = "model_saved"
+    save_path_final_results = "model_results"
 
     # generate the environment
     param = Parameters()
@@ -267,10 +399,34 @@ if __name__ == "__main__":
     param.NB_TIMESTEP_COOLDOWN_SUB = 0
     env = grid2op.make(param=param, backend=LightSimBackend())
     agent = RandomNN1(env.action_space, p=0.5)
-    agent_with_proxy = AgentWithProxy(agent, name="test_refacto1", max_row_training_set=int(total_train/10))
-
+    agent_with_proxy = AgentWithProxy(agent,
+                                      name=model_name,
+                                      max_row_training_set=int(total_train/10))
+    # train it
     agent_with_proxy.train(env,
                            total_train,
-                           save_path="model_saved",
-                           load_path="model_saved",
+                           save_path=save_path
                            )
+    # evaluate this agent
+    agent_with_proxy.evaluate(env,
+                              total_evaluation_step=total_evaluation_step,
+                              load_path=os.path.join(save_path, model_name),
+                              save_path=save_path_final_results,
+                              metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
+                                       "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
+                                       # "MAPE": mean_absolute_percentage_error
+                                       })
+    # now evaluate the agent when another "agent" is used (different data distribution)
+    agent_eval = RandomN2(env.action_space)
+    agent_with_proxy_eval = AgentWithProxy(agent_eval,
+                                           name=f"{model_name}_evalN2",
+                                           max_row_training_set=total_evaluation_step)
+    agent_with_proxy_eval.evaluate(env,
+                                   total_evaluation_step=total_evaluation_step,
+                                   load_path=os.path.join(save_path, model_name),
+                                   save_path=save_path_final_results,
+                                   metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
+                                            "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
+                                            # "MAPE": mean_absolute_percentage_error
+                                            }
+                                   )
