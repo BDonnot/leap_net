@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 try:
-    from leap_net.train import xxx
+    from leap_net.proxy import xxx
     __all__ += ["MultipleDasetCallBacks"]
 except ImportError:
     pass
