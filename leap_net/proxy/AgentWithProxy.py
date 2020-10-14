@@ -28,46 +28,29 @@ class AgentWithProxy(BaseAgent):
     """
     def __init__(self,
                  agent_action,  # the agent that will take some actions
-                 logdir="tf_logs",
+                 proxy,  # the proxy to train / evaluate
+                 logdir=None,  # tensorboard logs
                  update_tensorboard=256,  # tensorboard is updated every XXX training iterations
                  save_freq=256,  # model is saved every save_freq training iterations
                  ext=".h5",  # extension of the file in which you want to save the proxy
-
-                 name="leap_net",
-                 max_row_training_set=int(1e5),
-                 batch_size=32,
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v"),
-                 attr_tau=("line_status", ),
-                 sizes_enc=(20, 20, 20),
-                 sizes_main=(150, 150, 150),
-                 sizes_out=(100, 40),
-                 lr=1e-4,
                  ):
         BaseAgent.__init__(self, agent_action.action_space)
         self.agent_action = agent_action
 
         # to fill the training / test dataset
-        self.max_row_training_set = max_row_training_set
-        self.batch_size = batch_size
         self.global_iter = 0
         self.train_iter = 0
         self.__is_init = False  # is this model initiliazed
         self.is_training = True
 
         # proxy part
-        self._proxy = ProxyLeapNet(name=name,
-                                   max_row_training_set=max_row_training_set, batch_size=batch_size,
-                                   attr_x=attr_x, attr_y=attr_y, attr_tau=attr_tau,
-                                   sizes_enc=sizes_enc, sizes_main=sizes_main, sizes_out=sizes_out,
-                                   lr=lr)
+        self._proxy = proxy
 
         # tensorboard (should be initialized after the proxy)
         if logdir is not None:
             logpath = os.path.join(logdir, self.get_name())
             self._tf_writer = tf.summary.create_file_writer(logpath, name=self.get_name())
         else:
-            logpath = None
             self._tf_writer = None
         self.update_tensorboard = update_tensorboard
         self.save_freq = save_freq
@@ -99,6 +82,7 @@ class AgentWithProxy(BaseAgent):
 
     # agent interface
     def act(self, obs, reward, done=False):
+        self.global_iter += 1
         self.store_obs(obs)
         if self.is_training:
             batch_losses = self._proxy.train(tf_writer=self._tf_writer)
@@ -161,10 +145,10 @@ class AgentWithProxy(BaseAgent):
                 if done:
                     obs = self._reboot(env)
                     done = False
-                self.global_iter += 1
                 pbar.update(1)
                 if self.global_iter >= total_training_step:
                     break
+
         # save the model at the end
         self.save(self.save_path)
 
@@ -206,26 +190,29 @@ class AgentWithProxy(BaseAgent):
 
             # and do the "gym loop"
             while not done:
+                # act (which increment global_iter and ask the actor what action to do)
                 act = self.act(obs, reward, done)
 
                 # save the predictions and the reference
-                predictions = self._proxy.predict()
-                for arr_, pred_ in zip(pred_val, predictions):
-                    arr_[self.global_iter, :] = pred_.reshape(-1)
+                predictions = self._proxy.predict(force=self.global_iter == total_evaluation_step)
+                if predictions is not None:
+                    for arr_, pred_ in zip(pred_val, predictions):
+                        sz = pred_.shape[0]
+                        min_ = max((self.global_iter-sz), 0)
+                        arr_[min_:self.global_iter, :] = pred_
+
                 reality = self._proxy.get_true_output(obs)
                 for arr_, ref_ in zip(true_val, reality):
-                    arr_[self.global_iter, :] = ref_.reshape(-1)
+                    arr_[self.global_iter-1, :] = ref_.reshape(-1)
 
                 # TODO handle multienv here (this might be more complicated!)
                 obs, reward, done, info = env.step(act)
                 if done:
                     obs = self._reboot(env)
                     done = False
-                self.global_iter += 1
                 pbar.update(1)
                 if self.global_iter >= total_evaluation_step:
                     break
-
         # save the results and compute the metrics
         self._save_results(obs, save_path, metrics, pred_val, true_val)
         # TODO save the x's too!
@@ -383,50 +370,84 @@ if __name__ == "__main__":
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
     from sklearn.metrics import mean_squared_error, mean_absolute_error  #, mean_absolute_percentage_error
+    from grid2op.Chronics import MultifolderWithCache
 
-    total_train = 11*12*int(2e5)
-    total_train = 12*int(1e5)
-    total_evaluation_step = int(1e4)
+    total_train = int(1024)*int(128)
+    # total_train = 12*int(1e5)
+    total_evaluation_step = int(1024)
     env_name = "l2rpn_case14_sandbox"
-    model_name = "test_refacto2"
+    model_name = "Anne_Onymous"
+    model_name = "realtest_2"
     save_path = "model_saved"
     save_path_final_results = "model_results"
+    save_path_tensorbaord = "tf_logs"
 
     # generate the environment
     param = Parameters()
     param.NO_OVERFLOW_DISCONNECTION = True
     param.NB_TIMESTEP_COOLDOWN_LINE = 0
     param.NB_TIMESTEP_COOLDOWN_SUB = 0
-    env = grid2op.make(param=param, backend=LightSimBackend())
+    param.MAX_SUB_CHANGED = 99999
+    param.MAX_LINE_STATUS_CHANGED = 99999
+    param.NB_TIMESTEP_COOLDOWN_SUB = 0
+    if env_name == "l2rpn_case14_sandbox":
+        env = grid2op.make(env_name,
+                           param=param,
+                           backend=LightSimBackend(),
+                           chronics_class=MultifolderWithCache
+                           )
+        env.chronics_handler.real_data.reset()
+
+        # # I select only part of the data, it's unlikely the whole dataset can fit into memory...
+        # env.chronics_handler.set_filter(lambda path: re.match(".*00[0-9].*", path) is not None)
+    else:
+        raise RuntimeError("Unknown environment")
+
     agent = RandomNN1(env.action_space, p=0.5)
+    proxy = ProxyLeapNet(name=model_name)
     agent_with_proxy = AgentWithProxy(agent,
-                                      name=model_name,
-                                      max_row_training_set=int(total_train/10))
+                                      proxy=proxy,
+                                      logdir=save_path_tensorbaord
+                                      )
     # train it
     agent_with_proxy.train(env,
                            total_train,
                            save_path=save_path
                            )
-    # evaluate this agent
-    agent_with_proxy.evaluate(env,
-                              total_evaluation_step=total_evaluation_step,
-                              load_path=os.path.join(save_path, model_name),
-                              save_path=save_path_final_results,
-                              metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
-                                       "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
-                                       # "MAPE": mean_absolute_percentage_error
-                                       })
-    # now evaluate the agent when another "agent" is used (different data distribution)
-    agent_eval = RandomN2(env.action_space)
-    agent_with_proxy_eval = AgentWithProxy(agent_eval,
-                                           name=f"{model_name}_evalN2",
-                                           max_row_training_set=total_evaluation_step)
-    agent_with_proxy_eval.evaluate(env,
-                                   total_evaluation_step=total_evaluation_step,
-                                   load_path=os.path.join(save_path, model_name),
-                                   save_path=save_path_final_results,
-                                   metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
-                                            "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
-                                            # "MAPE": mean_absolute_percentage_error
-                                            }
-                                   )
+
+    # evaluate this proxy on a similar dataset
+    agent_evalN1 = RandomN1(env.action_space)
+    proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
+                              max_row_training_set=total_evaluation_step,
+                              eval_batch_size=min(total_evaluation_step, 1024*64)
+                              )
+    agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
+                                             proxy=proxy_eval,
+                                             logdir=None)
+
+    agent_with_proxy_evalN1.evaluate(env,
+                                     total_evaluation_step=total_evaluation_step,
+                                     load_path=os.path.join(save_path, model_name),
+                                     save_path=save_path_final_results,
+                                     metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
+                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
+                                              }
+                                     )
+
+    # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
+    agent_evalN2 = RandomN2(env.action_space)
+    proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN2",
+                              max_row_training_set=total_evaluation_step,
+                              eval_batch_size=min(total_evaluation_step, 1024*64)
+                              )
+    agent_with_proxy_evalN2 = AgentWithProxy(agent_evalN2,
+                                             proxy=proxy_eval,
+                                             logdir=None)
+    agent_with_proxy_evalN2.evaluate(env,
+                                     total_evaluation_step=total_evaluation_step,
+                                     load_path=os.path.join(save_path, model_name),
+                                     save_path=save_path_final_results,
+                                     metrics={"MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
+                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
+                                              }
+                                     )

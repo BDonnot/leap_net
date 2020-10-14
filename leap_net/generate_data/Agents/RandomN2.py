@@ -16,6 +16,8 @@ class RandomN2(BaseAgent):
     This "agent" will randomly disconnect exactly 1 powerline from the grid.
 
     **NB** Every powerline that is not chosen at random to be disconnected will be reconnected by force.
+
+    This agent will modify the status of all powerlines at every steps!
     """
 
     def __init__(self, action_space):
@@ -37,8 +39,9 @@ class RandomN2(BaseAgent):
         self.tmp_arr[id_1] = -1
         self.tmp_arr[id_2] = -1
         li_bus = [(i, el) for i, el in enumerate(self.tmp_arr)]
-        return self.action_space({"set_line_status": self.tmp_arr,
-                                  "set_bus": {"lines_or_id": li_bus,
-                                              "lines_ex_id": li_bus},
-                                  }
-                                 )
+        act = self.action_space({"set_line_status": self.tmp_arr,
+                                 "set_bus": {"lines_or_id": li_bus,
+                                             "lines_ex_id": li_bus},
+                                 }
+                                )
+        return act

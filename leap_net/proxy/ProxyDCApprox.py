@@ -7,132 +7,47 @@
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
 import copy
-import warnings
 import numpy as np
 
-import tensorflow as tf
-from tensorflow.keras.layers import Dense
-
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore", category=FutureWarning)
-    from tensorflow.keras.models import Sequential, Model
-    from tensorflow.keras.layers import Activation
-    from tensorflow.keras.layers import Input
-
 from leap_net.proxy.BaseProxy import BaseProxy
-from leap_net.LtauNoAdd import LtauNoAdd
 
+# this will be used to compute the DC approximation
+from grid2op.Backend import PandaPowerBackend
 
-class ProxyLeapNet(BaseProxy):
+# TODO
+class ProxyDCApprox(BaseProxy):
     def __init__(self,
-                 name="leap_net",
-                 max_row_training_set=int(1e5),
-                 train_batch_size=32,
-                 eval_batch_size=1024,
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),
+                 path_grid_json,  # complete path where the grid is represented as a json file
+                 name="dc_approx",
+                 attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),
                  attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v"),
-                 attr_tau=("line_status",),
-                 sizes_enc=(20, 20, 20),
-                 sizes_main=(150, 150, 150),
-                 sizes_out=(100, 40),
-                 lr=1e-4,
                  ):
-        BaseProxy.__init__(self,
-                           name=name,
-                           lr=lr,
-                           max_row_training_set=max_row_training_set,
-                           train_batch_size=train_batch_size,
-                           eval_batch_size=eval_batch_size)
+        BaseProxy.__init__(self, name=name, lr=0, max_row_training_set=1, eval_batch_size=1, train_batch_size=1)
 
         # datasets
-        self._my_x = None
-        self._my_y = None
-        self._my_tau = None
-
-        # sizes
-        self._sz_x = None
-        self._sz_y = None
-        self._sz_tau = None
-
-        # scaler
-        self._m_x = None
-        self._m_y = None
-        self._m_tau = None
-        self._sd_x = None
-        self._sd_y = None
-        self._sd_tau = None
+        for el in ("prod_p", "prod_v", "load_p", "load_q", "topo_vect"):
+            if not el in attr_x:
+                raise RuntimeError(f"The DC approximation need the variable \"{el}\" to be computed.")
 
         # specific part to leap net model
-        self.sizes_enc = sizes_enc
-        self.sizes_main = sizes_main
-        self.sizes_out = sizes_out
         self.attr_x = attr_x
         self.attr_y = attr_y
-        self.attr_tau = attr_tau
+        self.solver = PandaPowerBackend()
+        self.solver.init
+
 
     def build_model(self):
         """build the neural network used as proxy"""
         if self._model is not None:
             # model is already initialized
             return
-        self._model = Sequential()
-        inputs_x = [Input(shape=(el,), name="x_{}".format(nm_)) for el, nm_ in
-                    zip(self._sz_x, self.attr_x)]
-        inputs_tau = [Input(shape=(el,), name="tau_{}".format(nm_)) for el, nm_ in
-                      zip(self._sz_tau, self.attr_tau)]
-
-        # encode each data type in initial layers
-        encs_out = []
-        for init_val, nm_ in zip(inputs_x, self.attr_x):
-            lay = init_val
-            for i, size in enumerate(self.sizes_enc):
-                lay = Dense(size, name="enc_{}_{}".format(nm_, i))(lay)  # TODO resnet instead of Dense
-                lay = Activation("relu")(lay)
-            encs_out.append(lay)
-
-        # concatenate all that
-        lay = tf.keras.layers.concatenate(encs_out)
-
-        # i do a few layer
-        for i, size in enumerate(self.sizes_main):
-            lay = Dense(size, name="main_{}".format(i))(lay)  # TODO resnet instead of Dense
-            lay = Activation("relu")(lay)
-
-        # now i do the leap net to encode the state
-        encoded_state = lay
-        for input_tau, nm_ in zip(inputs_tau, self.attr_tau):
-            tmp = LtauNoAdd(name=f"leap_{nm_}")([lay, input_tau])
-            encoded_state = tf.keras.layers.add([encoded_state, tmp], name=f"adding_{nm_}")
-
-        # i predict the full state of the grid given the "control" variables
-        outputs_gm = []
-        model_losses = {}
-        lossWeights = {}  # TODO
-        for sz_out, nm_ in zip(self._sz_y,
-                               self.attr_y):
-            lay = encoded_state  # carefull i need my gradients here ! (don't use self.encoded_state)
-            for i, size in enumerate(self.sizes_out):
-                lay = Dense(size, name="{}_{}".format(nm_, i))(lay)
-                lay = Activation("relu")(lay)
-
-            # predict now the variable
-            name_output = "{}_hat".format(nm_)
-            pred_ = Dense(sz_out, name=name_output)(lay)
-            outputs_gm.append(pred_)
-            model_losses[name_output] = "mse"
-
-        # now create the model in keras
-        self._model = Model(inputs=(inputs_x, inputs_tau),
-                            outputs=outputs_gm,
-                            name="model")
-        # and "compile" it
-        self._schedule_lr_model, self._optimizer_model = self._make_optimiser()
-        self._model.compile(loss=model_losses, optimizer=self._optimizer_model)
+        #TODO init the pandapower grid
 
     def store_obs(self, obs):
         """
         store the observation into the "training database"
         """
+        super().store_obs(obs)
 
         # save the observation in the database
         for attr_nm, inp in zip(self.attr_x, self._my_x):
@@ -141,8 +56,6 @@ class ProxyLeapNet(BaseProxy):
             inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
         for attr_nm, inp in zip(self.attr_y, self._my_y):
             inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-
-        super().store_obs(obs)
 
     def get_output_sizes(self):
         return copy.deepcopy(self._sz_y)

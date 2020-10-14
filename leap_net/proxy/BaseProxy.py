@@ -20,7 +20,12 @@ class BaseProxy(ABC):
     """
     Base class you have to implement if you want to use easily a proxy
     """
-    def __init__(self, name, lr=1e-4, max_row_training_set=int(1e5), batch_size=32):
+    def __init__(self,
+                 name,
+                 lr=1e-4,
+                 max_row_training_set=int(1e5),
+                 train_batch_size=32,
+                 eval_batch_size=1024):
         # name
         self.name = name
 
@@ -34,8 +39,18 @@ class BaseProxy(ABC):
 
         # to fill the training / test dataset
         self.max_row_training_set = max_row_training_set
-        self.batch_size = batch_size
-
+        self.train_batch_size = train_batch_size
+        self.eval_batch_size = eval_batch_size
+        if self.max_row_training_set < self.train_batch_size:
+            raise RuntimeError(f"You cannot use a batch size of {self.train_batch_size} with a dataset counting at"
+                               f" most {self.max_row_training_set} rows. "
+                               "Please either increase \"max_row_training_set\" or decrease \"batch_size\""
+                               "(hint: batch_size>=max_row_training_set).")
+        if self.max_row_training_set < self.eval_batch_size:
+            raise RuntimeError(f"You cannot use a batch size of {self.eval_batch_size} with a dataset counting at"
+                               f" most {self.max_row_training_set} rows. "
+                               "Please either increase \"max_row_training_set\" or decrease \"batch_size\""
+                               "(hint: batch_size>=max_row_training_set).")
         # training part
         self.train_iter = 0  # number of training iteration
         self.last_id = 0  # last index in the database
@@ -49,6 +64,9 @@ class BaseProxy(ABC):
         # timers
         self._time_predict = 0
         self._time_train = 0
+
+        # for the prediction
+        self._last_id_eval = 0
 
     #######################################################################
     ## All functions bellow should be implemented in your specific proxy ##
@@ -348,7 +366,7 @@ class BaseProxy(ABC):
         -------
         None if the proxy has not been trained at this iteration, or the losses
         """
-        if self._global_iter % self.batch_size != 0:
+        if self._global_iter % self.train_batch_size != 0:
             return None
 
         if self.__db_full:
@@ -356,7 +374,7 @@ class BaseProxy(ABC):
         else:
             tmp_max = self.last_id
         indx_train = np.random.choice(np.arange(tmp_max),
-                                      size=self.batch_size,
+                                      size=self.train_batch_size,
                                       replace=False)
 
         data = self._extract_data(indx_train)
@@ -374,13 +392,19 @@ class BaseProxy(ABC):
             tf.summary.trace_off()
         return batch_losses
 
-    def predict(self):
+    def predict(self, force=False):
         """
         Make the prediction using the proxy.
 
-        Prediction are made "on the fly", which means that the batch size is 1.
+        Prediction are made "on the fly", which means that the batch size is 1. TODO this is not true anymore
 
         We do not recommend to override this function.
+
+        Notes
+        -----
+        It can only be called if the proxy has been "filled" with the observations before.
+
+        It can be filled by batches
 
         Returns
         -------
@@ -388,13 +412,14 @@ class BaseProxy(ABC):
             All the predictions made by the proxy. Note that these predictions should be directly comparable with
             the input data and (so if a scaling is applied, they should be unscaled)
         """
-        # TODO handle some batches here (needed with multi processing) especially store the last row used
-        # and use all the dataset between self.last_id and the last row used.
-        data = self._extract_data(np.array([self.last_id]))
+        if (self._global_iter % self.eval_batch_size != 0) and (not force):
+            return None
+        data = self._extract_data(np.arange(self._last_id_eval, self._global_iter) % self.max_row_training_set)
         beg_ = time.time()
         res = self._make_predictions(data)
         self._time_predict += time.time() - beg_
         res = self._post_process(res)
+        self._last_id_eval = self._global_iter
         return res
 
     def _save_dict(self, li, val):
