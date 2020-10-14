@@ -73,7 +73,12 @@ class BaseProxy(ABC):
     #######################################################################
     @abstractmethod
     def build_model(self):
-        """build the neural network used as proxy"""
+        """
+        build the neural network used as proxy
+
+        can be called multiple times
+
+        """
         pass
 
     @abstractmethod
@@ -96,8 +101,8 @@ class BaseProxy(ABC):
         pass
 
     @abstractmethod
-    def init(self, obs):
-        """initialize the meta data needed for the model to run"""
+    def init(self, obss):
+        """initialize the meta data needed for the model to run (obss is a list of observations)"""
         pass
 
     @abstractmethod
@@ -179,23 +184,26 @@ class BaseProxy(ABC):
     #######################################################################
     ## All functions bellow can be implemented in your specific proxy ##
     #######################################################################
-    def _get_mean(self, arr_, obs, attr_nm):
+    def _get_mean(self, arr_, obss, attr_nm):
         """
         For the scaler, compute the mean that will be used to scale the data
 
         This function can be overridden (for example if you want more control on how to scale the data)
 
+        obss is a list of observation
         """
-        add_, mul = self._get_adds_mults_from_name(obs, attr_nm)
+        add_, mul = self._get_adds_mults_from_name(obss, attr_nm)
         return add_
 
-    def _get_sd(self, arr_, obs, attr_nm):
+    def _get_sd(self, arr_, obss, attr_nm):
         """
         For the scaler, compute the mean that will be used to scale the data
 
         This function can be overridden (for example if you want more control on how to scale the data)
+
+        obss is a list of observation
         """
-        add_, mul_ = self._get_adds_mults_from_name(obs, attr_nm)
+        add_, mul_ = self._get_adds_mults_from_name(obss, attr_nm)
         return mul_
 
     def save_tensorboard(self, tf_writer, training_iter, batch_losses):
@@ -297,7 +305,8 @@ class BaseProxy(ABC):
         .. code-block:: python
 
             data = self._extract_data([last_index])
-            predictions = self.make_predictions(data)
+            tmp = self.make_predictions(data)
+            res = self._post_process(tmp)
 
         This function can be overridden (for example if your proxy does not use tensorflow)
 
@@ -378,7 +387,7 @@ class BaseProxy(ABC):
                                       replace=False)
 
         data = self._extract_data(indx_train)
-
+        # for el in data[1]: print(np.mean(el))
         if tf_writer is not None and self.__need_save_graph:
             tf.summary.trace_on()
 
@@ -457,28 +466,34 @@ class BaseProxy(ABC):
         else:
             getattr(self, attr_nm).append(self.dtype(val))
 
-    def _get_adds_mults_from_name(self, obs, attr_nm):
+    def _get_adds_mults_from_name(self, obss, attr_nm):
         """
         extract the scalers (mean and std) used for the observation
 
         We don't recommend to overide this function, modify the function `_get_mean` and `_get_sd` instead
 
+        obss is a list of observation obtained from running some environment with just the "actor" acting on
+        the grid. The size of this list is set by `AgentWithProxy.nb_obs_init`
+
         """
-        # TODO authorize some "blank run" to compute these scaler values
+        obs = obss[0]
+        add_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
+        mult_tmp = np.std([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype) + 1e-1
+
         if attr_nm in ["prod_p"]:
-            add_tmp = np.array([0.5 * (pmax + pmin) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)],
-                               dtype=self.dtype)
-            mult_tmp = np.array([max((pmax - pmin), 0.) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)],
-                                dtype=self.dtype)
+            # mult_tmp = np.array([max((pmax - pmin), 1.) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)],
+            #                     dtype=self.dtype)
+            # default values are good enough
+            pass
         elif attr_nm in ["prod_q"]:
-            add_tmp = self.dtype(0.)
-            mult_tmp = np.array([max(abs(val), 1.0) for val in obs.prod_q], dtype=self.dtype)
+            # default values are good enough
+            pass
         elif attr_nm in ["load_p", "load_q"]:
-            add_tmp = np.array([val for val in getattr(obs, attr_nm)], dtype=self.dtype)
-            mult_tmp = self.dtype(2)
+            # default values are good enough
+            pass
         elif attr_nm in ["load_v", "prod_v", "v_or", "v_ex"]:
-            add_tmp = self.dtype(0.)
-            mult_tmp = np.array([val for val in getattr(obs, attr_nm)], dtype=self.dtype)
+            # default values are good enough
+            pass
         elif attr_nm == "hour_of_day":
             add_tmp = self.dtype(12.)
             mult_tmp = self.dtype(12.)
@@ -493,17 +508,18 @@ class BaseProxy(ABC):
             mult_tmp = self.dtype(15.)
         elif attr_nm in ["target_dispatch", "actual_dispatch"]:
             add_tmp = self.dtype(0.)
-            mult_tmp = np.array([(pmax - pmin) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)], dtype=self.dtype)
-        elif attr_nm in ["a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex"]:
-            add_tmp = self.dtype(0.)
-            mult_tmp = np.array([max(val, 1.0) for val in getattr(obs, attr_nm)], dtype=self.dtype)
+            mult_tmp = np.array([max((pmax - pmin), 1.) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)],
+                                dtype=self.dtype)
+        elif attr_nm in ["p_or", "p_ex", "q_or", "q_ex"]:
+            mult_tmp = np.array([max(np.abs(val), 1.0) for val in getattr(obs, attr_nm)], dtype=self.dtype)
+        elif attr_nm in ["a_or", "a_ex"]:
+            mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
+            mult_tmp[mult_tmp <= 1e-2] = 1.0
         elif attr_nm == "line_status":
             # encode back to 0: connected, 1: disconnected
             add_tmp = self.dtype(1.)
             mult_tmp = self.dtype(-1.0)
-        else:
-            add_tmp = self.dtype(0.)
-            mult_tmp = self.dtype(1.0)
+
         return add_tmp, mult_tmp
 
     def get_total_predict_time(self):

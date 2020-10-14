@@ -12,6 +12,7 @@ import numpy as np
 
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import multiply as tfk_multiply
 
 with warnings.catch_warnings():
     warnings.filterwarnings("ignore", category=FutureWarning)
@@ -30,7 +31,7 @@ class ProxyLeapNet(BaseProxy):
                  train_batch_size=32,
                  eval_batch_size=1024,
                  attr_x=("prod_p", "prod_v", "load_p", "load_q"),
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v"),
+                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
                  attr_tau=("line_status",),
                  sizes_enc=(20, 20, 20),
                  sizes_main=(150, 150, 150),
@@ -70,6 +71,9 @@ class ProxyLeapNet(BaseProxy):
         self.attr_y = attr_y
         self.attr_tau = attr_tau
 
+        # not to load multiple times the meta data
+        self._metadata_loaded = False
+
     def build_model(self):
         """build the neural network used as proxy"""
         if self._model is not None:
@@ -80,6 +84,22 @@ class ProxyLeapNet(BaseProxy):
                     zip(self._sz_x, self.attr_x)]
         inputs_tau = [Input(shape=(el,), name="tau_{}".format(nm_)) for el, nm_ in
                       zip(self._sz_tau, self.attr_tau)]
+
+        tensor_line_status = None
+        line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
+        try:
+            idx_ = self.attr_tau.index("line_status")
+            tensor_line_status = inputs_tau[idx_]
+        except ValueError:
+            try:
+                idx_ = self.attr_x.index("line_status")
+                tensor_line_status = inputs_tau[idx_]
+            except ValueError:
+                warnings.warn("We strongly recommend you to get the \"line_status\" as an input vector")
+        if tensor_line_status is not None:
+            # line status is encoded: 1 disconnected, 0 connected
+            # I invert it here
+            tensor_line_status = 1.0 - tensor_line_status
 
         # encode each data type in initial layers
         encs_out = []
@@ -104,7 +124,7 @@ class ProxyLeapNet(BaseProxy):
             tmp = LtauNoAdd(name=f"leap_{nm_}")([lay, input_tau])
             encoded_state = tf.keras.layers.add([encoded_state, tmp], name=f"adding_{nm_}")
 
-        # i predict the full state of the grid given the "control" variables
+        # i predict the full state of the grid given the input variables
         outputs_gm = []
         model_losses = {}
         lossWeights = {}  # TODO
@@ -117,7 +137,13 @@ class ProxyLeapNet(BaseProxy):
 
             # predict now the variable
             name_output = "{}_hat".format(nm_)
-            pred_ = Dense(sz_out, name=name_output)(lay)
+            # force the model to output 0 when the powerline is disconnected
+            if tensor_line_status is not None and nm_ in line_attr:
+                pred_ = Dense(sz_out, name=f"{nm_}_force_disco")(lay)
+                pred_ = tfk_multiply((pred_, tensor_line_status), name=name_output)
+            else:
+                pred_ = Dense(sz_out, name=name_output)(lay)
+
             outputs_gm.append(pred_)
             model_losses[name_output] = "mse"
 
@@ -147,7 +173,7 @@ class ProxyLeapNet(BaseProxy):
     def get_output_sizes(self):
         return copy.deepcopy(self._sz_y)
 
-    def init(self, obs):
+    def init(self, obss):
         """
         Initialize all the meta data and the database for training
 
@@ -162,42 +188,50 @@ class ProxyLeapNet(BaseProxy):
         self.__db_full = False
         # save the input x
         self._my_x = []
-        self._m_x = []
-        self._sd_x = []
-        self._sz_x = []
+        if not self._metadata_loaded:
+            self._m_x = []
+            self._sd_x = []
+            self._sz_x = []
         for attr_nm in self.attr_x:
-            arr_ = self._extract_obs(obs, attr_nm)
+            arr_ = self._extract_obs(obss[0], attr_nm)
             sz = arr_.size
-            self._sz_x.append(sz)
             self._my_x.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_x.append(self._get_mean(arr_, obs, attr_nm))
-            self._sd_x.append(self._get_sd(arr_, obs, attr_nm))
+            if not self._metadata_loaded:
+                self._sz_x.append(sz)
+                self._m_x.append(self._get_mean(arr_, obss, attr_nm))
+                self._sd_x.append(self._get_sd(arr_, obss, attr_nm))
 
         # save the output y
         self._my_y = []
-        self._m_y = []
-        self._sd_y = []
-        self._sz_y = []
+        if not self._metadata_loaded:
+            self._m_y = []
+            self._sd_y = []
+            self._sz_y = []
         for attr_nm in self.attr_y:
-            arr_ = self._extract_obs(obs, attr_nm)
+            arr_ = self._extract_obs(obss[0], attr_nm)
             sz = arr_.size
-            self._sz_y.append(sz)
             self._my_y.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_y.append(self._get_mean(arr_, obs, attr_nm))
-            self._sd_y.append(self._get_sd(arr_, obs, attr_nm))
+            if not self._metadata_loaded:
+                self._sz_y.append(sz)
+                self._m_y.append(self._get_mean(arr_, obss, attr_nm))
+                self._sd_y.append(self._get_sd(arr_, obss, attr_nm))
 
         # save the tau vectors
         self._my_tau = []
-        self._m_tau = []
-        self._sd_tau = []
-        self._sz_tau = []
+        if not self._metadata_loaded:
+            self._m_tau = []
+            self._sd_tau = []
+            self._sz_tau = []
         for attr_nm in self.attr_tau:
-            arr_ = self._extract_obs(obs, attr_nm)
+            arr_ = self._extract_obs(obss[0], attr_nm)
             sz = arr_.size
-            self._sz_tau.append(sz)
             self._my_tau.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            self._m_tau.append(self._get_mean(arr_, obs, attr_nm))
-            self._sd_tau.append(self._get_sd(arr_, obs, attr_nm))
+            if not self._metadata_loaded:
+                self._sz_tau.append(sz)
+                self._m_tau.append(self._get_mean(arr_, obss, attr_nm))
+                self._sd_tau.append(self._get_sd(arr_, obss, attr_nm))
+
+        self._metadata_loaded = True
 
     def get_true_output(self, obs):
         """
@@ -205,6 +239,7 @@ class ProxyLeapNet(BaseProxy):
 
         This "true output" is computed based on the observation and corresponds to what the proxy is meant to
         approximate (but the reference)
+
         Parameters
         ----------
         obs
@@ -223,6 +258,7 @@ class ProxyLeapNet(BaseProxy):
         returns the metadata (model shapes, attribute used, sizes, etc.)
 
         this is used when saving the model
+
         """
         res = {}
         res["attr_x"] = [str(el) for el in self.attr_x]
@@ -296,6 +332,8 @@ class ProxyLeapNet(BaseProxy):
 
         self._time_train = float(dict_["_time_train"])
         self._time_predict = float(dict_["_time_predict"])
+
+        self._metadata_loaded = True
 
     def _extract_data(self, indx_train):
         """

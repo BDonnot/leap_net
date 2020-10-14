@@ -5,9 +5,14 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
+import numpy as np
 
-from leap_net.generate_data.Agents.RandomNN1 import RandomNN1
-from leap_net.generate_data.Agents.RandomN1 import RandomN1
-from leap_net.generate_data.Agents.RandomN2 import RandomN2
 
-__all__ = ["RandomNN1", "RandomN2", "RandomN1"]
+def nrmse(y_true, y_pred, multioutput="uniform"):
+    mse = (y_true - y_pred)**2
+    mse = np.sum(mse, axis=0)
+    rmse = np.sqrt(mse)
+    nrmse_ = rmse / (np.max(y_true, axis=0) - np.min(y_true, axis=0) + 1e-2)
+    if multioutput == "uniform":
+        nrmse_ = np.mean(nrmse_)
+    return nrmse_
