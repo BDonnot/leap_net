@@ -502,15 +502,14 @@ if __name__ == "__main__":
                      env_seed=env_seed,
                      agent_seed=agent_seed,
                      chron_id=chron_id_val)
-    proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
-                              max_row_training_set=total_evaluation_step,
-                              eval_batch_size=min(total_evaluation_step, 1024*64)
-                              )
     for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000]:
+        proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
+                                  max_row_training_set=total_evaluation_step,
+                                  eval_batch_size=pred_batch_size  # min(total_evaluation_step, 1024*64)
+                                  )
         agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
                                                  proxy=proxy_eval,
-                                                 logdir=None,
-                                                 eval_batch_size=pred_batch_size)
+                                                 logdir=None)
 
         dict_metrics = agent_with_proxy_evalN1.evaluate(env,
                                          total_evaluation_step=pred_batch_size,
