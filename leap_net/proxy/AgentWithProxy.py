@@ -229,8 +229,8 @@ class AgentWithProxy(BaseAgent):
                 if self.global_iter >= total_evaluation_step:
                     break
         # save the results and compute the metrics
-        self._save_results(obs, save_path, metrics, pred_val, true_val)
         # TODO save the x's too!
+        return self._save_results(obs, save_path, metrics, pred_val, true_val)
 
     def save(self, path):
         """
@@ -504,7 +504,7 @@ if __name__ == "__main__":
                      chron_id=chron_id_val)
     for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000]:
         proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
-                                  max_row_training_set=total_evaluation_step,
+                                  max_row_training_set=max(total_evaluation_step, pred_batch_size),
                                   eval_batch_size=pred_batch_size  # min(total_evaluation_step, 1024*64)
                                   )
         agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
