@@ -343,7 +343,7 @@ class AgentWithProxy(BaseAgent):
                         # print(f"{metric_name} for {nm}: {tmp}")  # don't print not to overload the display
                         dict_metrics[metric_name][nm] = [float(el) for el in tmp]
                     else:
-                        print(f"{metric_name} for {nm}: {tmp:.2f}")
+                        # print(f"{metric_name} for {nm}: {tmp:.2f}")
                         dict_metrics[metric_name][nm] = float(tmp)
 
         # save the numpy arrays (if needed)
@@ -402,11 +402,11 @@ if __name__ == "__main__":
     from leap_net.proxy.NRMSE import nrmse
 
     total_train = int(1024)*int(128)  # ~4 minutes
-    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins]
+    # total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins]
     total_evaluation_step = int(1024)
     env_name = "l2rpn_case14_sandbox"
     model_name = "Anne_Onymous"
-    model_name = "realtest_2"
+    model_name = "realtest_7"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
@@ -438,7 +438,7 @@ if __name__ == "__main__":
         raise RuntimeError("Unsupported environment for now")
 
     agent = RandomNN1(env.action_space, p=0.5)
-    proxy = ProxyLeapNet(name=model_name)
+    proxy = ProxyLeapNet(name=model_name, lr=3e-4)
     agent_with_proxy = AgentWithProxy(agent,
                                       proxy=proxy,
                                       logdir=save_path_tensorbaord
@@ -506,26 +506,31 @@ if __name__ == "__main__":
                               max_row_training_set=total_evaluation_step,
                               eval_batch_size=min(total_evaluation_step, 1024*64)
                               )
-    agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
-                                             proxy=proxy_eval,
-                                             logdir=None)
+    for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000]:
+        agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
+                                                 proxy=proxy_eval,
+                                                 logdir=None,
+                                                 eval_batch_size=pred_batch_size)
 
-    agent_with_proxy_evalN1.evaluate(env,
-                                     total_evaluation_step=total_evaluation_step,
-                                     load_path=os.path.join(save_path, model_name),
-                                     save_path=save_path_final_results,
-                                     metrics={"MSE_avg": mean_squared_error,
-                                              "MAE_avg": mean_absolute_error,
-                                              "NRMSE_avg": nrmse,
-                                              "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                               multioutput="raw_values"),
-                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                                multioutput="raw_values"),
-                                              "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                    multioutput="raw_values"),
-                                              }
-                                     )
-
+        dict_metrics = agent_with_proxy_evalN1.evaluate(env,
+                                         total_evaluation_step=pred_batch_size,
+                                         load_path=os.path.join(save_path, model_name),
+                                         save_path=save_path_final_results,
+                                         metrics={"MSE_avg": mean_squared_error,
+                                                  "MAE_avg": mean_absolute_error,
+                                                  "NRMSE_avg": nrmse,
+                                                  "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
+                                                                                                   multioutput="raw_values"),
+                                                  "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
+                                                                                                    multioutput="raw_values"),
+                                                  "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
+                                                                                        multioutput="raw_values"),
+                                                  }
+                                         )
+        total_pred_time_ms = 1000.*dict_metrics["predict_time"]
+        print(f'Ttime to compute {pred_batch_size}: {total_pred_time_ms} ({total_pred_time_ms/pred_batch_size:.3f} ms/powerflow)')
+    import sys
+    sys.exit(0)
     # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
     print("#######################"
           "##   SuperTest set   ##"

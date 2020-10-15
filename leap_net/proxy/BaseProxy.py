@@ -511,8 +511,10 @@ class BaseProxy(ABC):
             mult_tmp = np.array([max((pmax - pmin), 1.) for pmin, pmax in zip(obs.gen_pmin, obs.gen_pmax)],
                                 dtype=self.dtype)
         elif attr_nm in ["p_or", "p_ex", "q_or", "q_ex"]:
+            add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
             mult_tmp = np.array([max(np.abs(val), 1.0) for val in getattr(obs, attr_nm)], dtype=self.dtype)
         elif attr_nm in ["a_or", "a_ex"]:
+            add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
             mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
             mult_tmp[mult_tmp <= 1e-2] = 1.0
         elif attr_nm == "line_status":

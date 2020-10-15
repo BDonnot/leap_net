@@ -83,7 +83,7 @@ class ProxyBackend(BaseProxy):
     def get_output_sizes(self):
         return copy.deepcopy(self._sz_y)
 
-    def init(self, obs):
+    def init(self, obss):
         """
         Initialize all the meta data and the database for training
 
@@ -95,6 +95,10 @@ class ProxyBackend(BaseProxy):
         -------
 
         """
+        if self.max_row_training_set != 1:
+            raise RuntimeError("For now, a proxy based on a backend can only work with a database of 1 element ("
+                               "the backend is applied sequentially to each element)")
+        obs = obss[0]
         self.__db_full = False
         # save the input x
         self._my_x = []

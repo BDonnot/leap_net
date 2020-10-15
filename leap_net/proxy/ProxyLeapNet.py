@@ -73,6 +73,22 @@ class ProxyLeapNet(BaseProxy):
 
         # not to load multiple times the meta data
         self._metadata_loaded = False
+        self.tensor_line_status = None
+
+        # small stuff with powerlines
+        self.line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
+        self._idx = None
+        self._where_id = None
+        self.tensor_line_status = None
+        try:
+            self._idx = self.attr_tau.index("line_status")
+            self._where_id = "tau"
+        except ValueError:
+            try:
+                self._idx = self.attr_x.index("line_status")
+                self._where_id = "x"
+            except ValueError:
+                warnings.warn("We strongly recommend you to get the \"line_status\" as an input vector")
 
     def build_model(self):
         """build the neural network used as proxy"""
@@ -85,21 +101,17 @@ class ProxyLeapNet(BaseProxy):
         inputs_tau = [Input(shape=(el,), name="tau_{}".format(nm_)) for el, nm_ in
                       zip(self._sz_tau, self.attr_tau)]
 
-        tensor_line_status = None
-        line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
-        try:
-            idx_ = self.attr_tau.index("line_status")
-            tensor_line_status = inputs_tau[idx_]
-        except ValueError:
-            try:
-                idx_ = self.attr_x.index("line_status")
-                tensor_line_status = inputs_tau[idx_]
-            except ValueError:
-                warnings.warn("We strongly recommend you to get the \"line_status\" as an input vector")
-        if tensor_line_status is not None:
+        # tensor_line_status = None
+        if self._idx is not None:
             # line status is encoded: 1 disconnected, 0 connected
             # I invert it here
-            tensor_line_status = 1.0 - tensor_line_status
+            if self._where_id == "x":
+                self.tensor_line_status = inputs_x[self._idx]
+            elif self._where_id == "tau":
+                self.tensor_line_status = inputs_tau[self._idx]
+            else:
+                raise RuntimeError("Unknown \"where_id\"")
+            self.tensor_line_status = 1.0 - self.tensor_line_status
 
         # encode each data type in initial layers
         encs_out = []
@@ -138,9 +150,9 @@ class ProxyLeapNet(BaseProxy):
             # predict now the variable
             name_output = "{}_hat".format(nm_)
             # force the model to output 0 when the powerline is disconnected
-            if tensor_line_status is not None and nm_ in line_attr:
+            if self.tensor_line_status is not None and nm_ in self.line_attr:
                 pred_ = Dense(sz_out, name=f"{nm_}_force_disco")(lay)
-                pred_ = tfk_multiply((pred_, tensor_line_status), name=name_output)
+                pred_ = tfk_multiply((pred_, self.tensor_line_status), name=name_output)
             else:
                 pred_ = Dense(sz_out, name=name_output)(lay)
 
@@ -350,9 +362,28 @@ class ProxyLeapNet(BaseProxy):
         -------
 
         """
-        tmpx = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_x, self._m_x, self._sd_x)]
-        tmpy = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_y, self._m_y, self._sd_y)]
-        tmpt = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_) for arr, m_, sd_ in zip(self._my_tau, self._m_tau, self._sd_tau)]
+
+
+        # tf.convert_to_tensor(
+        tmpx = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_x, self._m_x, self._sd_x)]
+        tmpt = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_tau, self._m_tau, self._sd_tau)]
+        tmpy = [(arr[indx_train, :] - m_) / sd_ for arr, m_, sd_ in zip(self._my_y, self._m_y, self._sd_y)]
+
+        # tmp_line_status = 1.0
+        # TODO if i do it here, i need to do it also on the post process, and this is not great
+        # if self._idx is not None:
+        #     if self._where_id == "tau":
+        #         tmp_line_status = tmpt[self._idx]
+        #     elif self._where_id == "x":
+        #         tmp_line_status = tmpx[self._idx]
+        #     else:
+        #         raise RuntimeError("Unknown self._where_id")
+        # tmpy = [tf.convert_to_tensor((arr[indx_train, :] - m_) / sd_ * tmp_line_status if attr_n in self.line_attr else 1.0)
+        #         for arr, m_, sd_, attr_n in zip(self._my_y, self._m_y, self._sd_y, self.attr_y)]
+
+        tmpx = [tf.convert_to_tensor(el) for el in tmpx]
+        tmpt = [tf.convert_to_tensor(el) for el in tmpt]
+        tmpy = [tf.convert_to_tensor(el) for el in tmpy]
         return (tmpx, tmpt), tmpy
 
     def _post_process(self, predicted_state):
