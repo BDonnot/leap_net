@@ -61,10 +61,10 @@ class ResNetLayer(Layer):
     def get_config(self):
         config = super().get_config().copy()
         config.update({
-            'initializer': self.initializer,
-            'use_bias': self.use_bias,
-            "units": self.units,
-            "activation": self.activation
+            'initializer': str(self.initializer),
+            'use_bias': bool(self.use_bias),
+            "units": int(self.units),
+            "activation": str(self.activation)
         })
         return config
 

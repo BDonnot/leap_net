@@ -400,20 +400,30 @@ if __name__ == "__main__":
     from grid2op.Chronics import MultifolderWithCache
     from leap_net.proxy.ProxyBackend import ProxyBackend
     from leap_net.proxy.NRMSE import nrmse
+    from leap_net.ResNetLayer import ResNetLayer
 
     total_train = int(1024)*int(128)  # ~4 minutes
-    # total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins]
+    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins]
+    # total_train = int(1024)*int(1024) * int(16)  # ~10h
     total_evaluation_step = int(1024)
     env_name = "l2rpn_case14_sandbox"
     model_name = "Anne_Onymous"
-    model_name = "realtest_7"
+    model_name = "realtest_13"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
     chron_id_val = 100
     env_seed = 42
     agent_seed = 1
-    val_regex = ".*99[0-9].*"
+    layerfun = ResNetLayer
+    sizes_enc = (20,)
+    sizes_main = (150, 150)
+    sizes_out = (40,)
+
+    do_train = False
+    do_dc = False
+    do_N1 = True
+    do_N2 = False
 
     # generate the environment
     param = Parameters()
@@ -429,7 +439,25 @@ if __name__ == "__main__":
                            backend=LightSimBackend(),
                            chronics_class=MultifolderWithCache
                            )
-
+        sizes_enc = (20,)
+        sizes_main = (150, 150)
+        sizes_out = (40,)
+        val_regex = ".*99[0-9].*"
+        # I select only part of the data, for training
+        # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
+        # env.chronics_handler.real_data.reset()
+        obs = env.reset()
+    elif env_name == "l2rpn_neurips_2020_track2_small":
+        multimix = grid2op.make(env_name,
+                           param=param,
+                           backend=LightSimBackend(),
+                           chronics_class=MultifolderWithCache
+                           )
+        sizes_enc = (20,)
+        sizes_main = (150, 150)
+        sizes_out = (40,)
+        val_regex = ".*99[0-9].*"
+        env = multimix[next(iter(sorted(multimix.keys())))]
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
@@ -437,18 +465,24 @@ if __name__ == "__main__":
     else:
         raise RuntimeError("Unsupported environment for now")
 
-    agent = RandomNN1(env.action_space, p=0.5)
-    proxy = ProxyLeapNet(name=model_name, lr=3e-4)
-    agent_with_proxy = AgentWithProxy(agent,
-                                      proxy=proxy,
-                                      logdir=save_path_tensorbaord
-                                      )
+    if do_train:
+        agent = RandomNN1(env.action_space, p=0.5)
+        proxy = ProxyLeapNet(name=model_name,
+                             lr=3e-4,
+                             layer=layerfun,
+                             sizes_enc=sizes_enc,
+                             sizes_main=sizes_main,
+                             sizes_out=sizes_out)
+        agent_with_proxy = AgentWithProxy(agent,
+                                          proxy=proxy,
+                                          logdir=save_path_tensorbaord
+                                          )
 
-    # train it
-    agent_with_proxy.train(env,
-                           total_train,
-                           save_path=save_path
-                           )
+        # train it
+        agent_with_proxy.train(env,
+                               total_train,
+                               save_path=save_path
+                               )
 
     # Now proceed with the evaluation
     # I select only part of the data, for training
@@ -460,59 +494,98 @@ if __name__ == "__main__":
         raise RuntimeError("Unsupported environment for now")
 
     # evaluate a baseline
-    print("#######################"
-          "## DC approximation  ##"
-          "#######################")
-    agent_evalN1 = RandomN1(env.action_space)
-    reproducible_exp(env,
-                     agent=agent_evalN1,
-                     env_seed=env_seed,
-                     agent_seed=agent_seed,
-                     chron_id=chron_id_val)
-    proxy_dc = ProxyBackend(env._init_grid_path,
-                            name=f"{model_name}_evalDC",
-                            is_dc=True)
-    agent_with_proxy_dc = AgentWithProxy(agent_evalN1,
-                                         proxy=proxy_dc,
-                                         logdir=None)
-    agent_with_proxy_dc.init(env)
-    agent_with_proxy_dc.evaluate(env,
-                                 load_path=None,
-                                 save_path=save_path_final_results,
-                                 total_evaluation_step=total_evaluation_step,
-                                 metrics={"MSE_avg": mean_squared_error,
-                                          "MAE_avg": mean_absolute_error,
-                                          "NRMSE_avg": nrmse,
-                                          "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                           multioutput="raw_values"),
-                                          "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                            multioutput="raw_values"),
-                                          "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                multioutput="raw_values"),
-                                          }
-                                 )
+    if do_dc:
+        print("#######################"
+              "## DC approximation  ##"
+              "#######################")
+        agent_evalN1 = RandomN1(env.action_space)
+        reproducible_exp(env,
+                         agent=agent_evalN1,
+                         env_seed=env_seed,
+                         agent_seed=agent_seed,
+                         chron_id=chron_id_val)
+        proxy_dc = ProxyBackend(env._init_grid_path,
+                                name=f"{model_name}_evalDC",
+                                is_dc=True)
+        agent_with_proxy_dc = AgentWithProxy(agent_evalN1,
+                                             proxy=proxy_dc,
+                                             logdir=None)
+        agent_with_proxy_dc.init(env)
+        agent_with_proxy_dc.evaluate(env,
+                                     load_path=None,
+                                     save_path=save_path_final_results,
+                                     total_evaluation_step=total_evaluation_step,
+                                     metrics={"MSE_avg": mean_squared_error,
+                                              "MAE_avg": mean_absolute_error,
+                                              "NRMSE_avg": nrmse,
+                                              "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
+                                                                                               multioutput="raw_values"),
+                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
+                                                                                                multioutput="raw_values"),
+                                              "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
+                                                                                    multioutput="raw_values"),
+                                              }
+                                     )
 
     # evaluate this proxy on a similar dataset
-    print("#######################"
-          "##     Test set      ##"
-          "#######################")
-    agent_evalN1 = RandomN1(env.action_space)
-    reproducible_exp(env,
-                     agent=agent_evalN1,
-                     env_seed=env_seed,
-                     agent_seed=agent_seed,
-                     chron_id=chron_id_val)
-    for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000]:
-        proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
-                                  max_row_training_set=max(total_evaluation_step, pred_batch_size),
-                                  eval_batch_size=pred_batch_size  # min(total_evaluation_step, 1024*64)
+    if do_N1:
+        print("#######################"
+              "##     Test set      ##"
+              "#######################")
+        agent_evalN1 = RandomN1(env.action_space)
+        for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000]:
+            reproducible_exp(env,
+                             agent=agent_evalN1,
+                             env_seed=env_seed,
+                             agent_seed=agent_seed,
+                             chron_id=chron_id_val)
+            proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
+                                      max_row_training_set=max(total_evaluation_step, pred_batch_size),
+                                      eval_batch_size=pred_batch_size,  # min(total_evaluation_step, 1024*64)
+                                      layer=layerfun)
+            agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
+                                                     proxy=proxy_eval,
+                                                     logdir=None)
+
+            dict_metrics = agent_with_proxy_evalN1.evaluate(env,
+                                             total_evaluation_step=pred_batch_size,
+                                             load_path=os.path.join(save_path, model_name),
+                                             save_path=save_path_final_results,
+                                             metrics={"MSE_avg": mean_squared_error,
+                                                      "MAE_avg": mean_absolute_error,
+                                                      "NRMSE_avg": nrmse,
+                                                      "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
+                                                                                                       multioutput="raw_values"),
+                                                      "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
+                                                                                                        multioutput="raw_values"),
+                                                      "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
+                                                                                            multioutput="raw_values"),
+                                                      }
+                                             )
+            total_pred_time_ms = 1000.*dict_metrics["predict_time"]
+            print(f'Ttime to compute {pred_batch_size}: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
+
+    # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
+    if do_N2:
+        print("#######################"
+              "##   SuperTest set   ##"
+              "#######################")
+        agent_evalN2 = RandomN2(env.action_space)
+        reproducible_exp(env,
+                         agent=agent_evalN2,
+                         env_seed=env_seed,
+                         agent_seed=agent_seed,
+                         chron_id=chron_id_val)
+        proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN2",
+                                  max_row_training_set=total_evaluation_step,
+                                  eval_batch_size=min(total_evaluation_step, 1024*64),
+                                  layer=layerfun
                                   )
-        agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
+        agent_with_proxy_evalN2 = AgentWithProxy(agent_evalN2,
                                                  proxy=proxy_eval,
                                                  logdir=None)
-
-        dict_metrics = agent_with_proxy_evalN1.evaluate(env,
-                                         total_evaluation_step=pred_batch_size,
+        agent_with_proxy_evalN2.evaluate(env,
+                                         total_evaluation_step=total_evaluation_step,
                                          load_path=os.path.join(save_path, model_name),
                                          save_path=save_path_final_results,
                                          metrics={"MSE_avg": mean_squared_error,
@@ -526,39 +599,3 @@ if __name__ == "__main__":
                                                                                         multioutput="raw_values"),
                                                   }
                                          )
-        total_pred_time_ms = 1000.*dict_metrics["predict_time"]
-        print(f'Ttime to compute {pred_batch_size}: {total_pred_time_ms} ({total_pred_time_ms/pred_batch_size:.3f} ms/powerflow)')
-    import sys
-    sys.exit(0)
-    # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
-    print("#######################"
-          "##   SuperTest set   ##"
-          "#######################")
-    agent_evalN2 = RandomN2(env.action_space)
-    reproducible_exp(env,
-                     agent=agent_evalN2,
-                     env_seed=env_seed,
-                     agent_seed=agent_seed,
-                     chron_id=chron_id_val)
-    proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN2",
-                              max_row_training_set=total_evaluation_step,
-                              eval_batch_size=min(total_evaluation_step, 1024*64)
-                              )
-    agent_with_proxy_evalN2 = AgentWithProxy(agent_evalN2,
-                                             proxy=proxy_eval,
-                                             logdir=None)
-    agent_with_proxy_evalN2.evaluate(env,
-                                     total_evaluation_step=total_evaluation_step,
-                                     load_path=os.path.join(save_path, model_name),
-                                     save_path=save_path_final_results,
-                                     metrics={"MSE_avg": mean_squared_error,
-                                              "MAE_avg": mean_absolute_error,
-                                              "NRMSE_avg": nrmse,
-                                              "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                               multioutput="raw_values"),
-                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                                multioutput="raw_values"),
-                                              "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                    multioutput="raw_values"),
-                                              }
-                                     )

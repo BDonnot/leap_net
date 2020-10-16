@@ -9,10 +9,11 @@ import numpy as np
 
 
 def nrmse(y_true, y_pred, multioutput="uniform"):
-    mse = (y_true - y_pred)**2
-    mse = np.sum(mse, axis=0)
+    se_ = (y_true - y_pred)**2
+    mse = np.mean(se_, axis=0)
     rmse = np.sqrt(mse)
-    nrmse_ = rmse / (np.max(y_true, axis=0) - np.min(y_true, axis=0) + 1e-2)
+    norm_ = (np.max(y_true, axis=0) - np.min(y_true, axis=0) + 1e-2)
+    nrmse_ = rmse / norm_
     if multioutput == "uniform":
         nrmse_ = np.mean(nrmse_)
     return nrmse_

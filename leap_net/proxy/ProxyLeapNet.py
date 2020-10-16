@@ -37,6 +37,7 @@ class ProxyLeapNet(BaseProxy):
                  sizes_main=(150, 150, 150),
                  sizes_out=(100, 40),
                  lr=1e-4,
+                 layer=Dense  # TODO (for save and restore)
                  ):
         BaseProxy.__init__(self,
                            name=name,
@@ -44,6 +45,8 @@ class ProxyLeapNet(BaseProxy):
                            max_row_training_set=max_row_training_set,
                            train_batch_size=train_batch_size,
                            eval_batch_size=eval_batch_size)
+
+        self._layer_fun = layer
 
         # datasets
         self._my_x = None
@@ -64,6 +67,7 @@ class ProxyLeapNet(BaseProxy):
         self._sd_tau = None
 
         # specific part to leap net model
+        # TODO to make sure it's integers
         self.sizes_enc = sizes_enc
         self.sizes_main = sizes_main
         self.sizes_out = sizes_out
@@ -76,7 +80,7 @@ class ProxyLeapNet(BaseProxy):
         self.tensor_line_status = None
 
         # small stuff with powerlines
-        self.line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
+        self._line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
         self._idx = None
         self._where_id = None
         self.tensor_line_status = None
@@ -118,7 +122,7 @@ class ProxyLeapNet(BaseProxy):
         for init_val, nm_ in zip(inputs_x, self.attr_x):
             lay = init_val
             for i, size in enumerate(self.sizes_enc):
-                lay = Dense(size, name="enc_{}_{}".format(nm_, i))(lay)  # TODO resnet instead of Dense
+                lay = self._layer_fun(size, name="enc_{}_{}".format(nm_, i))(lay)
                 lay = Activation("relu")(lay)
             encs_out.append(lay)
 
@@ -127,7 +131,7 @@ class ProxyLeapNet(BaseProxy):
 
         # i do a few layer
         for i, size in enumerate(self.sizes_main):
-            lay = Dense(size, name="main_{}".format(i))(lay)  # TODO resnet instead of Dense
+            lay = self._layer_fun(size, name="main_{}".format(i))(lay)
             lay = Activation("relu")(lay)
 
         # now i do the leap net to encode the state
@@ -144,13 +148,13 @@ class ProxyLeapNet(BaseProxy):
                                self.attr_y):
             lay = encoded_state  # carefull i need my gradients here ! (don't use self.encoded_state)
             for i, size in enumerate(self.sizes_out):
-                lay = Dense(size, name="{}_{}".format(nm_, i))(lay)
+                lay = self._layer_fun(size, name="{}_{}".format(nm_, i))(lay)
                 lay = Activation("relu")(lay)
 
             # predict now the variable
             name_output = "{}_hat".format(nm_)
             # force the model to output 0 when the powerline is disconnected
-            if self.tensor_line_status is not None and nm_ in self.line_attr:
+            if self.tensor_line_status is not None and nm_ in self._line_attr:
                 pred_ = Dense(sz_out, name=f"{nm_}_force_disco")(lay)
                 pred_ = tfk_multiply((pred_, self.tensor_line_status), name=name_output)
             else:

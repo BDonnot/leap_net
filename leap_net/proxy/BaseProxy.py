@@ -57,6 +57,7 @@ class BaseProxy(ABC):
         self._global_iter = 0  # total number of data received
         self.__db_full = False  # is the "training database" full
         self.__need_save_graph = True  # save the tensorflow computation graph
+        self.__first_eval = True
 
         # the model
         self._model = None
@@ -294,7 +295,7 @@ class BaseProxy(ABC):
         """
         return self._model.train_on_batch(*data)
 
-    def _make_predictions(self, data):
+    def _make_predictions(self, data, training=False):
         """
         Make a prediction with the proxy on a new grid state.
 
@@ -320,7 +321,7 @@ class BaseProxy(ABC):
         -------
 
         """
-        return self._model(data)
+        return self._model(data, training=training)
 
     def _post_process(self, predicted_state):
         """
@@ -424,8 +425,14 @@ class BaseProxy(ABC):
         if (self._global_iter % self.eval_batch_size != 0) and (not force):
             return None
         data = self._extract_data(np.arange(self._last_id_eval, self._global_iter) % self.max_row_training_set)
+
+        if self.__first_eval:
+            # evaluate at "blank" the first time so that tensorflow / keras can load the model
+            res = self._make_predictions(data, training=False)
+            self.__first_eval = False
+
         beg_ = time.time()
-        res = self._make_predictions(data)
+        res = self._make_predictions(data, training=False)
         self._time_predict += time.time() - beg_
         res = self._post_process(res)
         self._last_id_eval = self._global_iter
@@ -491,9 +498,12 @@ class BaseProxy(ABC):
         elif attr_nm in ["load_p", "load_q"]:
             # default values are good enough
             pass
-        elif attr_nm in ["load_v", "prod_v", "v_or", "v_ex"]:
+        elif attr_nm in ["load_v", "prod_v"]:
             # default values are good enough
             pass
+        elif attr_nm in ["v_or", "v_ex"]:
+            # default values are good enough
+            add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
         elif attr_nm == "hour_of_day":
             add_tmp = self.dtype(12.)
             mult_tmp = self.dtype(12.)

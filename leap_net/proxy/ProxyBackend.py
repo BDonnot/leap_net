@@ -215,7 +215,7 @@ class ProxyBackend(BaseProxy):
         self.solver.apply_action(res)
         return None, None
 
-    def _make_predictions(self, data):
+    def _make_predictions(self, data, training=False):
         """
         compute the dc powerflow
         """
