@@ -402,13 +402,20 @@ if __name__ == "__main__":
     from leap_net.proxy.NRMSE import nrmse
     from leap_net.ResNetLayer import ResNetLayer
 
-    total_train = int(1024)*int(128)  # ~4 minutes
-    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins]
+    physical_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_devices):
+        tf.config.experimental.set_memory_growth(physical_devices[0], True)
+
+    total_train = int(1024)*int(128)  # ~4 minutes  # for case 14
+    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins] # for case 14
     # total_train = int(1024)*int(1024) * int(16)  # ~10h
     total_evaluation_step = int(1024)
-    env_name = "l2rpn_case14_sandbox"
-    model_name = "Anne_Onymous"
-    model_name = "realtest_13"
+    # env_name = "l2rpn_case14_sandbox"
+    # model_name = "Anne_Onymous"
+    # model_name = "realtest_13"
+    env_name = "l2rpn_neurips_2020_track2_small"
+    # env_name = "l2rpn_case14_sandbox"
+    model_name = "118_03"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
@@ -416,11 +423,8 @@ if __name__ == "__main__":
     env_seed = 42
     agent_seed = 1
     layerfun = ResNetLayer
-    sizes_enc = (20,)
-    sizes_main = (150, 150)
-    sizes_out = (40,)
 
-    do_train = False
+    do_train = True
     do_dc = False
     do_N1 = True
     do_N2 = False
@@ -443,6 +447,8 @@ if __name__ == "__main__":
         sizes_main = (150, 150)
         sizes_out = (40,)
         val_regex = ".*99[0-9].*"
+        model_name = "realtest_13"
+        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
@@ -453,11 +459,12 @@ if __name__ == "__main__":
                            backend=LightSimBackend(),
                            chronics_class=MultifolderWithCache
                            )
-        sizes_enc = (20,)
-        sizes_main = (150, 150)
-        sizes_out = (40,)
-        val_regex = ".*99[0-9].*"
+        sizes_enc = (30, 30)
+        sizes_main = (400, 400, 400, 400)
+        sizes_out = (100,)
+        val_regex = ".*Scenario_february_0[0-9].*"
         env = multimix[next(iter(sorted(multimix.keys())))]
+        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000]
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
@@ -487,6 +494,10 @@ if __name__ == "__main__":
     # Now proceed with the evaluation
     # I select only part of the data, for training
     if env_name == "l2rpn_case14_sandbox":
+        env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is not None)
+        env.chronics_handler.real_data.reset()
+        obs = env.reset()
+    elif env_name == "l2rpn_neurips_2020_track2_small":
         env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is not None)
         env.chronics_handler.real_data.reset()
         obs = env.reset()
@@ -533,7 +544,7 @@ if __name__ == "__main__":
               "##     Test set      ##"
               "#######################")
         agent_evalN1 = RandomN1(env.action_space)
-        for pred_batch_size in [1, 3, 10, 30, 100, 300, 1000, 3000, 10000, 30000, 100000, 300000]:
+        for pred_batch_size in li_sizes:
             reproducible_exp(env,
                              agent=agent_evalN1,
                              env_seed=env_seed,
