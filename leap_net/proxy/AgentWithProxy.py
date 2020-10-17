@@ -166,7 +166,7 @@ class AgentWithProxy(BaseAgent):
         # save the model at the end
         self.save(self.save_path)
 
-    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None):
+    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None, verbose=0):
         """
 
         Parameters
@@ -178,6 +178,7 @@ class AgentWithProxy(BaseAgent):
         metrics:
             dictionary of function, with keys being the metrics name, and values the function that compute
             this metric (on the whole output) that should be `metric_fun(y_true, y_pred)`
+        verbose
 
         Returns
         -------
@@ -230,7 +231,7 @@ class AgentWithProxy(BaseAgent):
                     break
         # save the results and compute the metrics
         # TODO save the x's too!
-        return self._save_results(obs, save_path, metrics, pred_val, true_val)
+        return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose)
 
     def save(self, path):
         """
@@ -325,7 +326,7 @@ class AgentWithProxy(BaseAgent):
         if self.train_iter % self.save_freq == 0:
             self.save(self.save_path)
 
-    def _save_results(self, obs, save_path, metrics, pred_val, true_val):
+    def _save_results(self, obs, save_path, metrics, pred_val, true_val, verbose):
 
         # compute the metrics (if any)
         dict_metrics = {}
@@ -340,10 +341,12 @@ class AgentWithProxy(BaseAgent):
                     tmp = metric_fun(true_, pred_)
                     # print the results and make sure the things are json serializable
                     if isinstance(tmp, Iterable):
-                        # print(f"{metric_name} for {nm}: {tmp}")  # don't print not to overload the display
+                        if verbose >= 2:
+                            print(f"{metric_name} for {nm}: {tmp}")  # don't print not to overload the display
                         dict_metrics[metric_name][nm] = [float(el) for el in tmp]
                     else:
-                        # print(f"{metric_name} for {nm}: {tmp:.2f}")
+                        if verbose >=1:
+                            print(f"{metric_name} for {nm}: {tmp:.2f}")
                         dict_metrics[metric_name][nm] = float(tmp)
 
         # save the numpy arrays (if needed)
@@ -407,15 +410,15 @@ if __name__ == "__main__":
         tf.config.experimental.set_memory_growth(physical_devices[0], True)
 
     total_train = int(1024)*int(128)  # ~4 minutes  # for case 14
-    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins] # for case 14
-    # total_train = int(1024)*int(1024) * int(16)  # ~10h
+    total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins] # for case 14 50 mins for case 118
+    total_train = int(1024)*int(1024) * int(16)  # ~10h
     total_evaluation_step = int(1024)
     # env_name = "l2rpn_case14_sandbox"
     # model_name = "Anne_Onymous"
     # model_name = "realtest_13"
     env_name = "l2rpn_neurips_2020_track2_small"
     # env_name = "l2rpn_case14_sandbox"
-    model_name = "118_03"
+    model_name = "118_06"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
@@ -449,6 +452,7 @@ if __name__ == "__main__":
         val_regex = ".*99[0-9].*"
         model_name = "realtest_13"
         li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
+        lr = 3e-4
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
@@ -459,12 +463,13 @@ if __name__ == "__main__":
                            backend=LightSimBackend(),
                            chronics_class=MultifolderWithCache
                            )
-        sizes_enc = (30, 30)
-        sizes_main = (400, 400, 400, 400)
-        sizes_out = (100,)
+        sizes_enc = (30, 30, 30)
+        sizes_main = (100, 100, 100, 100, 100, 100, 100, 100)
+        sizes_out = (60,)
         val_regex = ".*Scenario_february_0[0-9].*"
         env = multimix[next(iter(sorted(multimix.keys())))]
-        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000]
+        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000, 100000, 300000]
+        lr = 1e-4
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
@@ -475,7 +480,7 @@ if __name__ == "__main__":
     if do_train:
         agent = RandomNN1(env.action_space, p=0.5)
         proxy = ProxyLeapNet(name=model_name,
-                             lr=3e-4,
+                             lr=lr,
                              layer=layerfun,
                              sizes_enc=sizes_enc,
                              sizes_main=sizes_main,
@@ -544,6 +549,7 @@ if __name__ == "__main__":
               "##     Test set      ##"
               "#######################")
         agent_evalN1 = RandomN1(env.action_space)
+        max_ = np.max(li_sizes)
         for pred_batch_size in li_sizes:
             reproducible_exp(env,
                              agent=agent_evalN1,
@@ -571,7 +577,8 @@ if __name__ == "__main__":
                                                                                                         multioutput="raw_values"),
                                                       "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
                                                                                             multioutput="raw_values"),
-                                                      }
+                                                      },
+                                                            verbose= pred_batch_size == max_
                                              )
             total_pred_time_ms = 1000.*dict_metrics["predict_time"]
             print(f'Ttime to compute {pred_batch_size}: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
