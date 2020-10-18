@@ -293,7 +293,12 @@ class BaseProxy(ABC):
         The loss of the batch
 
         """
-        return self._model.train_on_batch(*data)
+        # import pdb
+        # pdb.set_trace()
+        # outputs = self._model(data[0])
+        # np.mean((outputs[1] - data[1][1]) ** 2, axis=-1)
+        losses = self._model.train_on_batch(*data)
+        return losses
 
     def _make_predictions(self, data, training=False):
         """
@@ -383,11 +388,15 @@ class BaseProxy(ABC):
             tmp_max = self.max_row_training_set
         else:
             tmp_max = self.last_id
+
+        # TODO seed
+        # TODO mode "i keep only the last of the dataset
         indx_train = np.random.choice(np.arange(tmp_max),
                                       size=self.train_batch_size,
                                       replace=False)
 
         data = self._extract_data(indx_train)
+
         # for el in data[1]: print(np.mean(el))
         if tf_writer is not None and self.__need_save_graph:
             tf.summary.trace_on()

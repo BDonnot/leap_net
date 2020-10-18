@@ -37,7 +37,11 @@ class ProxyLeapNet(BaseProxy):
                  sizes_main=(150, 150, 150),
                  sizes_out=(100, 40),
                  lr=1e-4,
-                 layer=Dense  # TODO (for save and restore)
+                 scale_main_layer=None,  # increase the size of the main layer
+                 scale_input_dec_layer=None,  # scale the input of the decoder
+                 scale_input_enc_layer=None,  # scale the input of the encoder
+                 layer=Dense,  # TODO (for save and restore)
+                 layer_act=None  # TODO (for save and restore)
                  ):
         BaseProxy.__init__(self,
                            name=name,
@@ -47,6 +51,7 @@ class ProxyLeapNet(BaseProxy):
                            eval_batch_size=eval_batch_size)
 
         self._layer_fun = layer
+        self._layer_act = layer_act
 
         # datasets
         self._my_x = None
@@ -74,6 +79,9 @@ class ProxyLeapNet(BaseProxy):
         self.attr_x = attr_x
         self.attr_y = attr_y
         self.attr_tau = attr_tau
+        self._scale_main_layer = scale_main_layer
+        self._scale_input_dec_layer = scale_input_dec_layer
+        self._scale_input_enc_layer = scale_input_enc_layer
 
         # not to load multiple times the meta data
         self._metadata_loaded = False
@@ -121,17 +129,32 @@ class ProxyLeapNet(BaseProxy):
         encs_out = []
         for init_val, nm_ in zip(inputs_x, self.attr_x):
             lay = init_val
+
+            if self._scale_input_enc_layer is not None:
+                # scale up to have higher dimension
+                lay = Dense(self._scale_input_enc_layer,
+                            name=f"scaling_input_encoder_{nm_}")(lay)
             for i, size in enumerate(self.sizes_enc):
-                lay = self._layer_fun(size, name="enc_{}_{}".format(nm_, i))(lay)
+                lay_fun = self._layer_fun(size,
+                                          name="enc_{}_{}".format(nm_, i),
+                                          activation=self._layer_act)
+                lay = lay_fun(lay)
                 lay = Activation("relu")(lay)
             encs_out.append(lay)
 
         # concatenate all that
         lay = tf.keras.layers.concatenate(encs_out)
 
+        if self._scale_main_layer is not None:
+            # scale up to have higher dimension
+            lay = Dense(self._scale_main_layer, name="scaling_inputs")(lay)
+
         # i do a few layer
         for i, size in enumerate(self.sizes_main):
-            lay = self._layer_fun(size, name="main_{}".format(i))(lay)
+            lay_fun = self._layer_fun(size,
+                                      name="main_{}".format(i),
+                                      activation=self._layer_act)
+            lay = lay_fun(lay)
             lay = Activation("relu")(lay)
 
         # now i do the leap net to encode the state
@@ -143,12 +166,22 @@ class ProxyLeapNet(BaseProxy):
         # i predict the full state of the grid given the input variables
         outputs_gm = []
         model_losses = {}
+        # model_losses = []
         lossWeights = {}  # TODO
         for sz_out, nm_ in zip(self._sz_y,
                                self.attr_y):
-            lay = encoded_state  # carefull i need my gradients here ! (don't use self.encoded_state)
+            lay = encoded_state
+            if self._scale_input_dec_layer is not None:
+                # scale up to have higher dimension
+                lay = Dense(self._scale_input_dec_layer,
+                            name=f"scaling_input_decoder_{nm_}")(lay)
+                lay = Activation("relu")(lay)
+
             for i, size in enumerate(self.sizes_out):
-                lay = self._layer_fun(size, name="{}_{}".format(nm_, i))(lay)
+                lay_fun = self._layer_fun(size,
+                                          name="{}_{}".format(nm_, i),
+                                          activation=self._layer_act)
+                lay = lay_fun(lay)
                 lay = Activation("relu")(lay)
 
             # predict now the variable
@@ -162,6 +195,7 @@ class ProxyLeapNet(BaseProxy):
 
             outputs_gm.append(pred_)
             model_losses[name_output] = "mse"
+            # model_losses.append(tf.keras.losses.mean_squared_error)
 
         # now create the model in keras
         self._model = Model(inputs=(inputs_x, inputs_tau),
@@ -175,7 +209,6 @@ class ProxyLeapNet(BaseProxy):
         """
         store the observation into the "training database"
         """
-
         # save the observation in the database
         for attr_nm, inp in zip(self.attr_x, self._my_x):
             inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
@@ -304,6 +337,27 @@ class ProxyLeapNet(BaseProxy):
         res["_sz_y"] = [int(el) for el in self._sz_y]
         res["_sz_tau"] = [int(el) for el in self._sz_tau]
 
+        if self._scale_main_layer is not None:
+            res["_scale_main_layer"] = int(self._scale_main_layer)
+        else:
+            # i don't store anything is it's None
+            pass
+        if self._scale_input_dec_layer is not None:
+            res["_scale_input_dec_layer"] = int(self._scale_input_dec_layer)
+        else:
+            # i don't store anything is it's None
+            pass
+        if self._scale_input_enc_layer is not None:
+            res["_scale_input_enc_layer"] = int(self._scale_input_enc_layer)
+        else:
+            # i don't store anything is it's None
+            pass
+        if self._layer_act is not None:
+            res["_layer_act"] = str(self._layer_act)
+        else:
+            # i don't store anything is it's None
+            pass
+
         res["sizes_enc"] = [int(el) for el in self.sizes_enc]
         res["sizes_main"] = [int(el) for el in self.sizes_main]
         res["sizes_out"] = [int(el) for el in self.sizes_out]
@@ -345,6 +399,22 @@ class ProxyLeapNet(BaseProxy):
         self.sizes_enc = [int(el) for el in dict_["sizes_enc"]]
         self.sizes_main = [int(el) for el in dict_["sizes_main"]]
         self.sizes_out = [int(el) for el in dict_["sizes_out"]]
+        if "_scale_main_layer" in dict_:
+            self._scale_main_layer = int(dict_["_scale_main_layer"])
+        else:
+            self._scale_main_layer = None
+        if "_scale_input_dec_layer" in dict_:
+            self._scale_input_dec_layer = int(dict_["_scale_input_dec_layer"])
+        else:
+            self._scale_input_dec_layer = None
+        if "_scale_input_enc_layer" in dict_:
+            self._scale_input_enc_layer = int(dict_["_scale_input_enc_layer"])
+        else:
+            self._scale_input_enc_layer = None
+        if "_layer_act" in dict_:
+            self._layer_act = str(dict_["_layer_act"])
+        else:
+            self._layer_act = None
 
         self._time_train = float(dict_["_time_train"])
         self._time_predict = float(dict_["_time_predict"])

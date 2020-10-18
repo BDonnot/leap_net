@@ -31,7 +31,7 @@ class AgentWithProxy(BaseAgent):
                  proxy,  # the proxy to train / evaluate
                  logdir=None,  # tensorboard logs
                  update_tensorboard=256,  # tensorboard is updated every XXX training iterations
-                 save_freq=256,  # model is saved every save_freq training iterations
+                 save_freq=int(1024)*int(64),  # model is saved every save_freq training iterations
                  ext=".h5",  # extension of the file in which you want to save the proxy
                  nb_obs_init=256,  # number of observations that are sent to the proxy to be initialized
                  ):
@@ -159,6 +159,8 @@ class AgentWithProxy(BaseAgent):
                 if done:
                     obs = self._reboot(env)
                     done = False
+                # TODO have  multiprocess here: this script stores the data in the database of the proxy
+                # TODO the proxy reads from this database (exposed as a tensorflow dataset) to train the model
                 pbar.update(1)
                 if self.global_iter >= total_training_step:
                     break
@@ -316,11 +318,11 @@ class AgentWithProxy(BaseAgent):
         if self.train_iter % self.update_tensorboard == 0:
             with self._tf_writer.as_default():
                 # save total loss
-                tf.summary.scalar(f"global loss",
-                                  np.sum(batch_losses),
+                tf.summary.scalar(f"0_global_loss",
+                                  batch_losses[0],
                                   self.train_iter,
-                                  description="loss for the entire model")
-                self._proxy.save_tensorboard(self._tf_writer, self.train_iter, batch_losses)
+                                  description="Loss of the entire model")
+                self._proxy.save_tensorboard(self._tf_writer, self.train_iter, batch_losses[1:])
 
     def _save_model(self):
         if self.train_iter % self.save_freq == 0:
@@ -397,6 +399,7 @@ if __name__ == "__main__":
     import grid2op
     from grid2op.Parameters import Parameters
     from leap_net.agents import RandomN1, RandomNN1, RandomN2
+    from grid2op.Agent import DoNothingAgent
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
     from sklearn.metrics import mean_squared_error, mean_absolute_error  #, mean_absolute_percentage_error
@@ -418,7 +421,8 @@ if __name__ == "__main__":
     # model_name = "realtest_13"
     env_name = "l2rpn_neurips_2020_track2_small"
     # env_name = "l2rpn_case14_sandbox"
-    model_name = "118_06"
+    model_name = "118_07"
+    model_name = "test_118_14"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
@@ -453,38 +457,54 @@ if __name__ == "__main__":
         model_name = "realtest_13"
         li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
         lr = 3e-4
+        scale_main_layer = None
+        scale_input_dec_layer = None
+        scale_input_enc_layer = None
+        layer_act = None
         # I select only part of the data, for training
         # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
         # env.chronics_handler.real_data.reset()
         obs = env.reset()
     elif env_name == "l2rpn_neurips_2020_track2_small":
         multimix = grid2op.make(env_name,
-                           param=param,
-                           backend=LightSimBackend(),
-                           chronics_class=MultifolderWithCache
-                           )
-        sizes_enc = (30, 30, 30)
-        sizes_main = (100, 100, 100, 100, 100, 100, 100, 100)
+                                param=param,
+                                backend=LightSimBackend(),
+                                chronics_class=MultifolderWithCache
+                                )
+        sizes_enc = (60, 60, 60)
+        sizes_main = (150, 150, 150, 150, 150, 150)
         sizes_out = (60,)
+        val_regex_train = ".*Scenario_february_[1-9][0-9].*"  # don't include the validation set
         val_regex = ".*Scenario_february_0[0-9].*"
         env = multimix[next(iter(sorted(multimix.keys())))]
-        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000, 100000, 300000]
+        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000, 100000]  # , 300000]
         lr = 1e-4
+        scale_main_layer = 600
+        scale_input_dec_layer = None
+        scale_input_enc_layer = 200
+        layer_act = "relu"
         # I select only part of the data, for training
-        # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
+        env.chronics_handler.set_filter(lambda path: re.match(val_regex_train, path) is not None)
+        print("... resetting the chronics")
         # env.chronics_handler.real_data.reset()
-        obs = env.reset()
+        # obs = env.reset()
+        print("done")
     else:
         raise RuntimeError("Unsupported environment for now")
 
     if do_train:
         agent = RandomNN1(env.action_space, p=0.5)
+        agent = DoNothingAgent(env.action_space)
         proxy = ProxyLeapNet(name=model_name,
                              lr=lr,
                              layer=layerfun,
+                             layer_act=layer_act,
                              sizes_enc=sizes_enc,
                              sizes_main=sizes_main,
-                             sizes_out=sizes_out)
+                             sizes_out=sizes_out,
+                             scale_main_layer=scale_main_layer,
+                             scale_input_dec_layer=scale_input_dec_layer,
+                             scale_input_enc_layer=scale_input_enc_layer)
         agent_with_proxy = AgentWithProxy(agent,
                                           proxy=proxy,
                                           logdir=save_path_tensorbaord
@@ -581,7 +601,7 @@ if __name__ == "__main__":
                                                             verbose= pred_batch_size == max_
                                              )
             total_pred_time_ms = 1000.*dict_metrics["predict_time"]
-            print(f'Ttime to compute {pred_batch_size}: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
+            print(f'Time to compute {pred_batch_size} powerflow: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
 
     # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
     if do_N2:

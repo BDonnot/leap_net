@@ -8,7 +8,9 @@
 
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.layers import Dense
+from tensorflow.keras.layers import Activation
 from tensorflow.keras.layers import add as tfk_add
+
 
 import tensorflow as tf
 
@@ -71,9 +73,9 @@ class ResNetLayer(Layer):
     def call(self, inputs, **kwargs):
         tmp = self.e(inputs)
         if self.activation is not None:
-            tmp = self.activation(tmp)
+            tmp = Activation(self.activation)(tmp)
         tmp = self.d(tmp)
         if self.activation is not None:
-            tmp = self.activation(tmp)
+            tmp = Activation(self.activation)(tmp)
         res = tfk_add([inputs, tmp])
         return res
