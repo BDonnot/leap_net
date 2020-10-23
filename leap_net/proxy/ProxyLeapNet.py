@@ -30,8 +30,8 @@ class ProxyLeapNet(BaseProxy):
                  max_row_training_set=int(1e5),
                  train_batch_size=32,
                  eval_batch_size=1024,
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
+                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),  # TODO refacto that in BaseProxy
+                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # TODO refacto that in BaseProxy
                  attr_tau=("line_status",),
                  sizes_enc=(20, 20, 20),
                  sizes_main=(150, 150, 150),
@@ -54,13 +54,13 @@ class ProxyLeapNet(BaseProxy):
         self._layer_act = layer_act
 
         # datasets
-        self._my_x = None
-        self._my_y = None
+        self._my_x = None  # TODO refacto that in BaseProxy
+        self._my_y = None  # TODO refacto that in BaseProxy
         self._my_tau = None
 
         # sizes
-        self._sz_x = None
-        self._sz_y = None
+        self._sz_x = None  # TODO refacto that in BaseProxy
+        self._sz_y = None  # TODO refacto that in BaseProxy
         self._sz_tau = None
 
         # scaler

@@ -26,8 +26,8 @@ class ProxyBackend(BaseProxy):
     def __init__(self,
                  path_grid_json,  # complete path where the grid is represented as a json file
                  name="dc_approx",
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
+                 attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),  # TODO refacto that in BaseProxy
+                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # TODO refacto that in BaseProxy
                  is_dc=True
                  ):
         BaseProxy.__init__(self, name=name, lr=0, max_row_training_set=1, eval_batch_size=1, train_batch_size=1)
@@ -44,8 +44,8 @@ class ProxyBackend(BaseProxy):
                                    f"Only possible outputs are \"{self._supported_output}\".")
 
         # specific part to dc model
-        self.attr_x = attr_x
-        self.attr_y = attr_y
+        self.attr_x = attr_x  # TODO refacto that in BaseProxy
+        self.attr_y = attr_y  # TODO refacto that in BaseProxy
         self.solver = PandaPowerBackend()
         self.solver.set_env_name(self.name)
         self.solver.load_grid(path_grid_json)  # the real powergrid of the environment
@@ -59,10 +59,10 @@ class ProxyBackend(BaseProxy):
             self._indx_var[el] = attr_x.index(el)
 
         # the dataset (computed on the fly)
-        self._my_x = None
-        self._my_y = None
-        self._sz_x = None
-        self._sz_y = None
+        self._my_x = None  # TODO refacto that in BaseProxy
+        self._my_y = None  # TODO refacto that in BaseProxy
+        self._sz_x = None  # TODO refacto that in BaseProxy
+        self._sz_y = None  # TODO refacto that in BaseProxy
 
     def build_model(self):
         """build the neural network used as proxy"""
