@@ -151,3 +151,4 @@ leap_net/train/model_saved/
 leap_net/proxy/model_saved/
 leap_net/proxy/tf_logs/
 leap_net/proxy/model_results/
+leap_net/proxy/my_saved_expe_for_bench/

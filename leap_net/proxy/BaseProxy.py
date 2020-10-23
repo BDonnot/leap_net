@@ -19,7 +19,30 @@ import tensorflow.keras.optimizers as tfko
 class BaseProxy(ABC):
     """
     Base class you have to implement if you want to use easily a proxy
+
+    Attributes
+    ----------
+
+    name: ``str``
+        The name of the proxy (used for example when saving or restoring data)
+
+    lr: ``float``
+        The learning rate (discarded when the proxy do not need to be learned)
+
+    max_row_training_set: ``int``
+        An integer > 0. It represents the maximum of rows there will be in the "training set" of our proxy.
+
+    train_batch_size: ``int``
+        An integer > 0. It represents the training batch size of the proxy. When the proxy is trained, it tells
+        how many "state" are feed at once.
+
+    eval_batch_size: ``int``
+        An integer > 0. It represents the batch size of the proxy when it is used to make predictions. Sometimes
+        for computation time reasons, it can be useful to batch multiple data and predict more than one state at
+        the same time.
     """
+    DEBUG = False
+
     def __init__(self,
                  name,
                  lr=1e-4,
@@ -293,10 +316,6 @@ class BaseProxy(ABC):
         The loss of the batch
 
         """
-        # import pdb
-        # pdb.set_trace()
-        # outputs = self._model(data[0])
-        # np.mean((outputs[1] - data[1][1]) ** 2, axis=-1)
         losses = self._model.train_on_batch(*data)
         return losses
 
@@ -394,6 +413,9 @@ class BaseProxy(ABC):
         indx_train = np.random.choice(np.arange(tmp_max),
                                       size=self.train_batch_size,
                                       replace=False)
+
+        if self.DEBUG:
+            indx_train = np.arange(self.train_batch_size)
 
         data = self._extract_data(indx_train)
 
@@ -509,10 +531,13 @@ class BaseProxy(ABC):
             pass
         elif attr_nm in ["load_v", "prod_v"]:
             # default values are good enough
-            pass
+            # stds are almost 0 for loads, this leads to instability
+            mult_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
         elif attr_nm in ["v_or", "v_ex"]:
             # default values are good enough
             add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
+            # stds are almost 0 for loads, this leads to instability
+            mult_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
         elif attr_nm == "hour_of_day":
             add_tmp = self.dtype(12.)
             mult_tmp = self.dtype(12.)

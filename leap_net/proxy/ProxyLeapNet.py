@@ -139,7 +139,9 @@ class ProxyLeapNet(BaseProxy):
                                           name="enc_{}_{}".format(nm_, i),
                                           activation=self._layer_act)
                 lay = lay_fun(lay)
-                lay = Activation("relu")(lay)
+                if self._layer_act is None:
+                    # add a non linearity if not added in the layer
+                    lay = Activation("relu")(lay)
             encs_out.append(lay)
 
         # concatenate all that
@@ -155,7 +157,9 @@ class ProxyLeapNet(BaseProxy):
                                       name="main_{}".format(i),
                                       activation=self._layer_act)
             lay = lay_fun(lay)
-            lay = Activation("relu")(lay)
+            if self._layer_act is None:
+                # add a non linearity if not added in the layer
+                lay = Activation("relu")(lay)
 
         # now i do the leap net to encode the state
         encoded_state = lay
@@ -182,7 +186,9 @@ class ProxyLeapNet(BaseProxy):
                                           name="{}_{}".format(nm_, i),
                                           activation=self._layer_act)
                 lay = lay_fun(lay)
-                lay = Activation("relu")(lay)
+                if self._layer_act is None:
+                    # add a non linearity if not added in the layer
+                    lay = Activation("relu")(lay)
 
             # predict now the variable
             name_output = "{}_hat".format(nm_)
@@ -210,13 +216,14 @@ class ProxyLeapNet(BaseProxy):
         store the observation into the "training database"
         """
         # save the observation in the database
-        for attr_nm, inp in zip(self.attr_x, self._my_x):
-            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-        for attr_nm, inp in zip(self.attr_tau, self._my_tau):
-            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-        for attr_nm, inp in zip(self.attr_y, self._my_y):
-            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-
+        if not self.DEBUG or self._global_iter < self.train_batch_size:
+            # store only the first batch if DEBUG otherwise store all
+            for attr_nm, inp in zip(self.attr_x, self._my_x):
+                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
+            for attr_nm, inp in zip(self.attr_tau, self._my_tau):
+                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
+            for attr_nm, inp in zip(self.attr_y, self._my_y):
+                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
         super().store_obs(obs)
 
     def get_output_sizes(self):

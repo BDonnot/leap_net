@@ -155,10 +155,11 @@ class AgentWithProxy(BaseAgent):
             while not done:
                 act = self.act(obs, reward, done)
                 # TODO handle multienv here
-                obs, reward, done, info = env.step(act)
-                if done:
-                    obs = self._reboot(env)
-                    done = False
+                if not self._proxy.DEBUG or self.global_iter <= self._proxy.train_batch_size:
+                    obs, reward, done, info = env.step(act)
+                    if done:
+                        obs = self._reboot(env)
+                        done = False
                 # TODO have  multiprocess here: this script stores the data in the database of the proxy
                 # TODO the proxy reads from this database (exposed as a tensorflow dataset) to train the model
                 pbar.update(1)
@@ -232,7 +233,7 @@ class AgentWithProxy(BaseAgent):
                 if self.global_iter >= total_evaluation_step:
                     break
         # save the results and compute the metrics
-        # TODO save the x's too!
+        # TODO save the real x's too!
         return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose)
 
     def save(self, path):
@@ -350,6 +351,8 @@ class AgentWithProxy(BaseAgent):
                         if verbose >=1:
                             print(f"{metric_name} for {nm}: {tmp:.2f}")
                         dict_metrics[metric_name][nm] = float(tmp)
+                # TODO if installed, use the grid2op plotMatplot to project this data on the grid and get a pdf of
+                # TODO where the errors are located
 
         # save the numpy arrays (if needed)
         if save_path is not None:
@@ -402,7 +405,7 @@ if __name__ == "__main__":
     from grid2op.Agent import DoNothingAgent
     from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
-    from sklearn.metrics import mean_squared_error, mean_absolute_error  #, mean_absolute_percentage_error
+    from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
     from grid2op.Chronics import MultifolderWithCache
     from leap_net.proxy.ProxyBackend import ProxyBackend
     from leap_net.proxy.NRMSE import nrmse
@@ -414,15 +417,16 @@ if __name__ == "__main__":
 
     total_train = int(1024)*int(128)  # ~4 minutes  # for case 14
     total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins] # for case 14 50 mins for case 118
-    total_train = int(1024)*int(1024) * int(16)  # ~10h
-    total_evaluation_step = int(1024)
+    total_train = int(1024)*int(1024) * int(16)  # ~10h for 14
+    total_train = int(1024)*int(1024) * int(8)  # ~7h for 118
+    total_evaluation_step = int(1024) * int(32)
     # env_name = "l2rpn_case14_sandbox"
     # model_name = "Anne_Onymous"
     # model_name = "realtest_13"
     env_name = "l2rpn_neurips_2020_track2_small"
     # env_name = "l2rpn_case14_sandbox"
     model_name = "118_07"
-    model_name = "test_118_14"
+    model_name = "test_118_09"
     save_path = "model_saved"
     save_path_final_results = "model_results"
     save_path_tensorbaord = "tf_logs"
@@ -434,7 +438,8 @@ if __name__ == "__main__":
     do_train = True
     do_dc = False
     do_N1 = True
-    do_N2 = False
+    do_N2 = True
+    do_hades = True  # TODO not used yet
 
     # generate the environment
     param = Parameters()
@@ -450,12 +455,15 @@ if __name__ == "__main__":
                            backend=LightSimBackend(),
                            chronics_class=MultifolderWithCache
                            )
+        total_train = int(1024) * int(1024)  # ~30 minutes [32-35 mins] # for case 14 50 mins for case 118
         sizes_enc = (20,)
         sizes_main = (150, 150)
         sizes_out = (40,)
         val_regex = ".*99[0-9].*"
-        model_name = "realtest_13"
+        if do_train is False:
+            model_name = "realtest_13"
         li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
+        attr_y = ("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex")
         lr = 3e-4
         scale_main_layer = None
         scale_input_dec_layer = None
@@ -471,30 +479,33 @@ if __name__ == "__main__":
                                 backend=LightSimBackend(),
                                 chronics_class=MultifolderWithCache
                                 )
-        sizes_enc = (60, 60, 60)
-        sizes_main = (150, 150, 150, 150, 150, 150)
-        sizes_out = (60,)
+        if do_train is False:
+            model_name = "test_118_05"
+        sizes_enc = (60, )
+        sizes_main = (300, 300, 300, 300)
+        sizes_out = (60, )
         val_regex_train = ".*Scenario_february_[1-9][0-9].*"  # don't include the validation set
         val_regex = ".*Scenario_february_0[0-9].*"
         env = multimix[next(iter(sorted(multimix.keys())))]
         li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000, 100000]  # , 300000]
+        attr_y = ("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex")
         lr = 1e-4
         scale_main_layer = 600
         scale_input_dec_layer = None
-        scale_input_enc_layer = 200
+        scale_input_enc_layer = None
         layer_act = "relu"
         # I select only part of the data, for training
         env.chronics_handler.set_filter(lambda path: re.match(val_regex_train, path) is not None)
         print("... resetting the chronics")
-        # env.chronics_handler.real_data.reset()
-        # obs = env.reset()
+        env.chronics_handler.real_data.reset()
+        obs = env.reset()
         print("done")
     else:
         raise RuntimeError("Unsupported environment for now")
 
     if do_train:
         agent = RandomNN1(env.action_space, p=0.5)
-        agent = DoNothingAgent(env.action_space)
+        # agent = DoNothingAgent(env.action_space)
         proxy = ProxyLeapNet(name=model_name,
                              lr=lr,
                              layer=layerfun,
@@ -504,7 +515,8 @@ if __name__ == "__main__":
                              sizes_out=sizes_out,
                              scale_main_layer=scale_main_layer,
                              scale_input_dec_layer=scale_input_dec_layer,
-                             scale_input_enc_layer=scale_input_enc_layer)
+                             scale_input_enc_layer=scale_input_enc_layer,
+                             attr_y=attr_y)
         agent_with_proxy = AgentWithProxy(agent,
                                           proxy=proxy,
                                           logdir=save_path_tensorbaord
@@ -598,10 +610,14 @@ if __name__ == "__main__":
                                                       "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
                                                                                             multioutput="raw_values"),
                                                       },
-                                                            verbose= pred_batch_size == max_
+                                                            verbose=pred_batch_size == max_
                                              )
             total_pred_time_ms = 1000.*dict_metrics["predict_time"]
             print(f'Time to compute {pred_batch_size} powerflow: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
+            if pred_batch_size == max_:
+                print(proxy_eval._model.summary())
+            # import pdb
+            # pdb.set_trace()
 
     # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
     if do_N2:
@@ -635,5 +651,6 @@ if __name__ == "__main__":
                                                                                                     multioutput="raw_values"),
                                                   "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
                                                                                         multioutput="raw_values"),
-                                                  }
+                                                  },
+                                         verbose=1
                                          )
