@@ -204,7 +204,7 @@ class BaseProxy(ABC):
 
         Notes
         -----
-        This function is expected to modify the instance on which it is called (*ie* self`)
+        This function is expected to modify the instance on which it is called (*ie* `self`)
 
         """
         self.attr_x = tuple([str(el) for el in dict_["attr_x"]])

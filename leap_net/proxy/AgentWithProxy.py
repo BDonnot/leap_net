@@ -11,6 +11,7 @@ import re
 
 import numpy as np
 import tensorflow as tf
+from tqdm import tqdm
 
 from collections.abc import Iterable
 from grid2op.Agent import BaseAgent
@@ -396,26 +397,14 @@ class AgentWithProxy(BaseAgent):
         return obs
 
 
-def reproducible_exp(env, agent, env_seed=None, chron_id=None, agent_seed=None):
-    if env_seed is not None:
-        env.seed(env_seed)
-
-    if chron_id is not None:
-        # reset the environment
-        env.chronics_handler.tell_id(chron_id-1)
-
-    if agent_seed is not None:
-        agent.seed(agent_seed)
-
-
 if __name__ == "__main__":
     import grid2op
     from grid2op.Parameters import Parameters
     from leap_net.agents import RandomN1, RandomNN1, RandomN2
     from grid2op.Agent import DoNothingAgent
-    from tqdm import tqdm
     from lightsim2grid.LightSimBackend import LightSimBackend
     from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
+    from leap_net.proxy.NRMSE import nrmse
     from grid2op.Chronics import MultifolderWithCache
     from leap_net.proxy.ProxyBackend import ProxyBackend
     from leap_net.proxy.NRMSE import nrmse
@@ -612,6 +601,12 @@ if __name__ == "__main__":
                                                           },
                                                  verbose=1
                                                 )
+        del dict_metrics["predict_time"]
+        del dict_metrics2["predict_time"]
+        del dict_metrics["avg_pred_time_s"]
+        del dict_metrics2["avg_pred_time_s"]
+        if dict_metrics != dict_metrics2:
+            raise RuntimeError("This should be true")
 
     # Now proceed with the evaluation
     # I select only part of the data, for training

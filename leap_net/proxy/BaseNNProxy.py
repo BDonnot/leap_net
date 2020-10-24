@@ -17,6 +17,7 @@ import numpy as np
 
 import tensorflow as tf
 import tensorflow.keras.optimizers as tfko
+from tensorflow.keras.layers import Dense
 
 from leap_net.proxy.BaseProxy import BaseProxy
 
@@ -40,6 +41,8 @@ class BaseNNProxy(BaseProxy):
                  train_batch_size=32,
                  max_row_training_set=int(1e5),
                  eval_batch_size=1024,
+                 layer=Dense,
+                 layer_act=None,
                  attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),  # input that will be given to the proxy
                  attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # output that we want the proxy to predict
                  ):
@@ -50,6 +53,9 @@ class BaseNNProxy(BaseProxy):
                            attr_x=attr_x,
                            attr_y=attr_y
                            )
+
+        self._layer_fun = layer
+        self._layer_act = layer_act
 
         self._lr = lr
         self.train_batch_size = train_batch_size
@@ -180,6 +186,30 @@ class BaseNNProxy(BaseProxy):
         """
         losses = self._model.train_on_batch(*data)
         return losses
+
+    def load_metadata(self, dict_):
+
+        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
+        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
+
+        self._sz_x = [int(el) for el in dict_["_sz_x"]]
+        self._sz_y = [int(el) for el in dict_["_sz_y"]]
+
+        self._time_train = float(dict_["_time_train"])
+        self._time_predict = float(dict_["_time_predict"])
+
+        self._init_database_shapes()
+        super().load_metadata(dict_)
+
+    def get_metadata(self):
+        res = super().get_metadata()
+        if self._layer_act is not None:
+            res["_layer_act"] = str(self._layer_act)
+        else:
+            # i don't store anything if it's None
+            pass
+
+        return res
 
     #######################################################
     ## We don't recommend to change anything bellow this ##

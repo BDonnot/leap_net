@@ -41,32 +41,28 @@ class ProxyLeapNet(BaseNNProxy):
                  scale_input_dec_layer=None,  # scale the input of the decoder
                  scale_input_enc_layer=None,  # scale the input of the encoder
                  layer=Dense,  # TODO (for save and restore)
-                 layer_act=None  # TODO (for save and restore)
+                 layer_act=None
                  ):
         BaseNNProxy.__init__(self,
-                           name=name,
-                           lr=lr,
-                           max_row_training_set=max_row_training_set,
-                           train_batch_size=train_batch_size,
-                           eval_batch_size=eval_batch_size,
-                           attr_x=attr_x,
-                           attr_y=attr_y)
-
-        self._layer_fun = layer
-        self._layer_act = layer_act
-
+                             name=name,
+                             lr=lr,
+                             max_row_training_set=max_row_training_set,
+                             train_batch_size=train_batch_size,
+                             eval_batch_size=eval_batch_size,
+                             attr_x=attr_x,
+                             attr_y=attr_y,
+                             layer=layer,
+                             layer_act=layer_act)
         # datasets
         self._my_tau = None
-
-        # sizes
         self._sz_tau = None
 
-        # scaler
-        self._m_x = None
-        self._m_y = None
+        # scalers
+        self._m_x = None  # TODO move that into the baseNN class
+        self._m_y = None  # TODO move that into the baseNN class
         self._m_tau = None
-        self._sd_x = None
-        self._sd_y = None
+        self._sd_x = None  # TODO move that into the baseNN class
+        self._sd_y = None  # TODO move that into the baseNN class
         self._sd_tau = None
 
         # specific part to leap net model
@@ -318,11 +314,6 @@ class ProxyLeapNet(BaseNNProxy):
             pass
         if self._scale_input_enc_layer is not None:
             res["_scale_input_enc_layer"] = int(self._scale_input_enc_layer)
-        else:
-            # i don't store anything if it's None
-            pass
-        if self._layer_act is not None:
-            res["_layer_act"] = str(self._layer_act)
         else:
             # i don't store anything if it's None
             pass
