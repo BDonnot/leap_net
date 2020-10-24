@@ -136,7 +136,10 @@ class BaseProxy(ABC):
         """
         initialize the meta data needed for the model to run (obss is a list of observations)
 
-        This function may be overridden but in that case we recommend to call the method of the super class
+        This function may be overridden but in that case we recommend to call the method of the super class.
+
+        If it's overridden, we also recommend to call `_init_database_shapes`
+
         """
 
         self.__db_full = False
@@ -273,7 +276,7 @@ class BaseProxy(ABC):
     #######################################################################
     def _extract_data(self, indx_train):
         """
-        extract from the training dataset, the data with indexes indx_train
+        extract from the training dataset, the data with indexes `indx_train`
 
         The model will be trained with :
 

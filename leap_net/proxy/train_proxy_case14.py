@@ -92,7 +92,7 @@ def reproducible_exp(env, agent, env_seed=None, chron_id_start=None, agent_seed=
 
 
 def main(limit_gpu_memory=True,
-         total_train=int(1024) * int(128),
+         total_train=int(1024)*int(1024),
          env_name="l2rpn_case14_sandbox",
          save_path="model_saved",
          save_path_tensorbaord="tf_logs",

@@ -176,7 +176,7 @@ class AgentWithProxy(BaseAgent):
         # save the model at the end
         self.save(self.save_path)
 
-    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None, verbose=0):
+    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None, verbose=0, save_values=True):
         """
 
         Parameters
@@ -193,6 +193,9 @@ class AgentWithProxy(BaseAgent):
             of "train")
 
         verbose
+
+        save_values: ``bool``
+
 
         Returns
         -------
@@ -245,7 +248,7 @@ class AgentWithProxy(BaseAgent):
                     break
         # save the results and compute the metrics
         # TODO save the real x's too!
-        return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose)
+        return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose, save_values)
 
     def save(self, path):
         """
@@ -340,7 +343,24 @@ class AgentWithProxy(BaseAgent):
         if self.train_iter % self.save_freq == 0:
             self.save(self.save_path)
 
-    def _save_results(self, obs, save_path, metrics, pred_val, true_val, verbose):
+    def _save_results(self, obs, save_path, metrics, pred_val, true_val, verbose, save_values=True):
+        """
+
+        Parameters
+        ----------
+        obs
+        save_path
+        metrics
+        pred_val
+        true_val
+        verbose
+        save_values: ``bool``
+            Do I save the arrays (of true and predicted values). If ``False`` only the json is saved
+
+        Returns
+        -------
+
+        """
         # TODO save the "x" given to the proxy here too
         # compute the metrics (if any)
         dict_metrics = {}
@@ -376,9 +396,10 @@ class AgentWithProxy(BaseAgent):
             if not os.path.exists(save_path):
                 os.mkdir(save_path)
 
-            for nm, pred_, true_ in zip(array_names, pred_val, true_val):
-                np.save(os.path.join(save_path, f"{nm}_pred.npy"), pred_)
-                np.save(os.path.join(save_path, f"{nm}_real.npy"), true_)
+            if save_values:
+                for nm, pred_, true_ in zip(array_names, pred_val, true_val):
+                    np.save(os.path.join(save_path, f"{nm}_pred.npy"), pred_)
+                    np.save(os.path.join(save_path, f"{nm}_real.npy"), true_)
             with open(os.path.join(save_path, "metrics.json"), "w", encoding="utf-8") as f:
                 json.dump(dict_metrics, fp=f, indent=4, sort_keys=True)
         return dict_metrics

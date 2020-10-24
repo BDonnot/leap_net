@@ -73,11 +73,15 @@ grid etc.
 In this section I will introduce what is the "interface" the proxy must implement in order to be used in this
 "framework". The proxy must inherit from `BaseProxy` (see the documentation for more information).
 
+TODO 
+
 And it must absolutely implement the following methods:
 
 - `build_model()`: is used to create the proxy
-- `_extract_data(indx_train)`: is used to retrieve the data (from the training / test database) located
-  at `indx_train`
+- `_make_predictions(data)`: is used when the proxy is asked to make some predictions from the data given as input.
+
+ANd optionnally, the "most common" methods that can be implemented are:
+
 - `init(obss)`: obss is a list of observations. This method is used at the beginning (before the proxy is being used)
   to perform initialized some information (*eg* the mean and standard deviation if you want to scale the data for 
   example)
@@ -88,16 +92,9 @@ And it must absolutely implement the following methods:
   instance with it
 - `get_metadata()`: as opposed to the `load_metadata` function, this one should output a valid dictionary that 
   represents the metadata of the proxy (see example in the bullet point above)
-- `get_output_sizes()`: the proxy outputs some vectors having a given shape. This function outputs the size of
-  each of theses output as a vector.
-- `get_true_output(obs)`: from a given observation *obs* this method should return the real value (so the one obtained
-  in the observation) if the output of the proxy. For example, if you ask the predict the value of "a_or" then this
-  function should extract the real value of "a_or" as seen in the environment
-- `get_attr_output_name(obs)`: given an observation, this function should output some names for each of the output. For
-  example, if a proxy is asked to predict "p_or" and "a_or" (in that order) 
-  then this function can return something like ["output_por", "output_aor"]. It is used to give names to the predictions
-  of the proxy during the evaluation.
 - `store_obs(obs)`: store a single observation in the database. We are working on simplifiying this part.
+
+TODO : add load_data and save_data
 
 And this is it. Nothing else is required.
 
