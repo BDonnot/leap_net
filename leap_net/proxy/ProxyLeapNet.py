@@ -20,18 +20,18 @@ with warnings.catch_warnings():
     from tensorflow.keras.layers import Activation
     from tensorflow.keras.layers import Input
 
-from leap_net.proxy.BaseProxy import BaseProxy
+from leap_net.proxy.BaseNNProxy import BaseNNProxy
 from leap_net.LtauNoAdd import LtauNoAdd
 
 
-class ProxyLeapNet(BaseProxy):
+class ProxyLeapNet(BaseNNProxy):
     def __init__(self,
                  name="leap_net",
                  max_row_training_set=int(1e5),
                  train_batch_size=32,
                  eval_batch_size=1024,
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),  # TODO refacto that in BaseProxy
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # TODO refacto that in BaseProxy
+                 attr_x=("prod_p", "prod_v", "load_p", "load_q"),
+                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
                  attr_tau=("line_status",),
                  sizes_enc=(20, 20, 20),
                  sizes_main=(150, 150, 150),
@@ -43,24 +43,22 @@ class ProxyLeapNet(BaseProxy):
                  layer=Dense,  # TODO (for save and restore)
                  layer_act=None  # TODO (for save and restore)
                  ):
-        BaseProxy.__init__(self,
+        BaseNNProxy.__init__(self,
                            name=name,
                            lr=lr,
                            max_row_training_set=max_row_training_set,
                            train_batch_size=train_batch_size,
-                           eval_batch_size=eval_batch_size)
+                           eval_batch_size=eval_batch_size,
+                           attr_x=attr_x,
+                           attr_y=attr_y)
 
         self._layer_fun = layer
         self._layer_act = layer_act
 
         # datasets
-        self._my_x = None  # TODO refacto that in BaseProxy
-        self._my_y = None  # TODO refacto that in BaseProxy
         self._my_tau = None
 
         # sizes
-        self._sz_x = None  # TODO refacto that in BaseProxy
-        self._sz_y = None  # TODO refacto that in BaseProxy
         self._sz_tau = None
 
         # scaler
@@ -76,19 +74,17 @@ class ProxyLeapNet(BaseProxy):
         self.sizes_enc = sizes_enc
         self.sizes_main = sizes_main
         self.sizes_out = sizes_out
-        self.attr_x = attr_x
-        self.attr_y = attr_y
         self.attr_tau = attr_tau
         self._scale_main_layer = scale_main_layer
         self._scale_input_dec_layer = scale_input_dec_layer
         self._scale_input_enc_layer = scale_input_enc_layer
 
         # not to load multiple times the meta data
-        self._metadata_loaded = False
-        self.tensor_line_status = None
 
-        # small stuff with powerlines
+        # small stuff with powerlines (force prediction of 0 when powerline is disconnected)
+        # attributes that are stored as lines
         self._line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
+        self.tensor_line_status = None
         self._idx = None
         self._where_id = None
         self.tensor_line_status = None
@@ -215,15 +211,11 @@ class ProxyLeapNet(BaseProxy):
         """
         store the observation into the "training database"
         """
+        # save the specific part to tau
+        for attr_nm, inp in zip(self.attr_tau, self._my_tau):
+            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
+
         # save the observation in the database
-        if not self.DEBUG or self._global_iter < self.train_batch_size:
-            # store only the first batch if DEBUG otherwise store all
-            for attr_nm, inp in zip(self.attr_x, self._my_x):
-                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-            for attr_nm, inp in zip(self.attr_tau, self._my_tau):
-                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-            for attr_nm, inp in zip(self.attr_y, self._my_y):
-                inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
         super().store_obs(obs)
 
     def get_output_sizes(self):
@@ -241,73 +233,40 @@ class ProxyLeapNet(BaseProxy):
         -------
 
         """
-        self.__db_full = False
-        # save the input x
-        self._my_x = []
+
         if not self._metadata_loaded:
+            self._sz_tau = []
+            for attr_nm in self.attr_tau:
+                arr_ = self._extract_obs(obss[0], attr_nm)
+                sz = arr_.size
+                self._sz_tau.append(sz)
+
+        super().init(obss)
+        # initialize mean and standard deviation
+        # but only if the model is being built, not if it has been reloaded
+        if not self._metadata_loaded:
+            # for the input
             self._m_x = []
             self._sd_x = []
-            self._sz_x = []
-        for attr_nm in self.attr_x:
-            arr_ = self._extract_obs(obss[0], attr_nm)
-            sz = arr_.size
-            self._my_x.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            if not self._metadata_loaded:
-                self._sz_x.append(sz)
-                self._m_x.append(self._get_mean(arr_, obss, attr_nm))
-                self._sd_x.append(self._get_sd(arr_, obss, attr_nm))
+            for attr_nm in self.attr_x:
+                self._m_x.append(self._get_mean(obss, attr_nm))
+                self._sd_x.append(self._get_sd(obss, attr_nm))
 
-        # save the output y
-        self._my_y = []
-        if not self._metadata_loaded:
+            # for the output
             self._m_y = []
             self._sd_y = []
-            self._sz_y = []
-        for attr_nm in self.attr_y:
-            arr_ = self._extract_obs(obss[0], attr_nm)
-            sz = arr_.size
-            self._my_y.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            if not self._metadata_loaded:
-                self._sz_y.append(sz)
-                self._m_y.append(self._get_mean(arr_, obss, attr_nm))
-                self._sd_y.append(self._get_sd(arr_, obss, attr_nm))
+            for attr_nm in self.attr_y:
+                self._m_y.append(self._get_mean(obss, attr_nm))
+                self._sd_y.append(self._get_sd(obss, attr_nm))
 
-        # save the tau vectors
-        self._my_tau = []
-        if not self._metadata_loaded:
+            # for the tau vectors
             self._m_tau = []
             self._sd_tau = []
-            self._sz_tau = []
-        for attr_nm in self.attr_tau:
-            arr_ = self._extract_obs(obss[0], attr_nm)
-            sz = arr_.size
-            self._my_tau.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-            if not self._metadata_loaded:
-                self._sz_tau.append(sz)
-                self._m_tau.append(self._get_mean(arr_, obss, attr_nm))
-                self._sd_tau.append(self._get_sd(arr_, obss, attr_nm))
+            for attr_nm in self.attr_tau:
+                self._m_tau.append(self._get_mean(obss, attr_nm))
+                self._sd_tau.append(self._get_sd(obss, attr_nm))
 
         self._metadata_loaded = True
-
-    def get_true_output(self, obs):
-        """
-        Returns, from the observation the true output that has been computed by the environment.
-
-        This "true output" is computed based on the observation and corresponds to what the proxy is meant to
-        approximate (but the reference)
-
-        Parameters
-        ----------
-        obs
-
-        Returns
-        -------
-
-        """
-        res = []
-        for attr_nm in self.attr_y:
-            res.append(self._extract_obs(obs, attr_nm))
-        return res
 
     def get_metadata(self):
         """
@@ -316,11 +275,12 @@ class ProxyLeapNet(BaseProxy):
         this is used when saving the model
 
         """
-        res = {}
-        res["attr_x"] = [str(el) for el in self.attr_x]
+        res = super().get_metadata()
+        # save attribute for the "extra" database
         res["attr_tau"] = [str(el) for el in self.attr_tau]
-        res["attr_y"] = [str(el) for el in self.attr_y]
+        res["_sz_tau"] = [int(el) for el in self._sz_tau]
 
+        # save means and standard deviation
         res["_m_x"] = []
         for el in self._m_x:
             self._save_dict(res["_m_x"], el)
@@ -340,37 +300,32 @@ class ProxyLeapNet(BaseProxy):
         for el in self._sd_tau:
             self._save_dict(res["_sd_tau"], el)
 
-        res["_sz_x"] = [int(el) for el in self._sz_x]
-        res["_sz_y"] = [int(el) for el in self._sz_y]
-        res["_sz_tau"] = [int(el) for el in self._sz_tau]
-
-        if self._scale_main_layer is not None:
-            res["_scale_main_layer"] = int(self._scale_main_layer)
-        else:
-            # i don't store anything is it's None
-            pass
-        if self._scale_input_dec_layer is not None:
-            res["_scale_input_dec_layer"] = int(self._scale_input_dec_layer)
-        else:
-            # i don't store anything is it's None
-            pass
-        if self._scale_input_enc_layer is not None:
-            res["_scale_input_enc_layer"] = int(self._scale_input_enc_layer)
-        else:
-            # i don't store anything is it's None
-            pass
-        if self._layer_act is not None:
-            res["_layer_act"] = str(self._layer_act)
-        else:
-            # i don't store anything is it's None
-            pass
-
+        # store the sizes
         res["sizes_enc"] = [int(el) for el in self.sizes_enc]
         res["sizes_main"] = [int(el) for el in self.sizes_main]
         res["sizes_out"] = [int(el) for el in self.sizes_out]
 
-        res["_time_train"] = float(self._time_train)
-        res["_time_predict"] = float(self._time_predict)
+        # store some information about some transformations we can do
+        if self._scale_main_layer is not None:
+            res["_scale_main_layer"] = int(self._scale_main_layer)
+        else:
+            # i don't store anything if it's None
+            pass
+        if self._scale_input_dec_layer is not None:
+            res["_scale_input_dec_layer"] = int(self._scale_input_dec_layer)
+        else:
+            # i don't store anything if it's None
+            pass
+        if self._scale_input_enc_layer is not None:
+            res["_scale_input_enc_layer"] = int(self._scale_input_enc_layer)
+        else:
+            # i don't store anything if it's None
+            pass
+        if self._layer_act is not None:
+            res["_layer_act"] = str(self._layer_act)
+        else:
+            # i don't store anything if it's None
+            pass
         return res
 
     def save_tensorboard(self, tf_writer, training_iter, batch_losses):
@@ -381,27 +336,24 @@ class ProxyLeapNet(BaseProxy):
 
         # TODO add the "evaluate on validation episode"
 
+    def _init_database_shapes(self):
+        super()._init_database_shapes()
+        self._my_tau = []
+        for sz in self._sz_tau:
+            self._my_tau.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
+
     def load_metadata(self, dict_):
         """
         load the metadata of this neural network (also called meta parameters) from a dictionary
-
-        Notes
-        -----
-        modify self!
-
         """
-        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
         self.attr_tau = tuple([str(el) for el in dict_["attr_tau"]])
-        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
+        self._sz_tau = [int(el) for el in dict_["_sz_tau"]]
+        super().load_metadata(dict_)
 
         for key in ["_m_x", "_m_y", "_m_tau", "_sd_x", "_sd_y", "_sd_tau"]:
             setattr(self, key, [])
             for el in dict_[key]:
                 self._add_attr(key, el)
-
-        self._sz_x = [int(el) for el in dict_["_sz_x"]]
-        self._sz_y = [int(el) for el in dict_["_sz_y"]]
-        self._sz_tau = [int(el) for el in dict_["_sz_tau"]]
 
         self.sizes_enc = [int(el) for el in dict_["sizes_enc"]]
         self.sizes_main = [int(el) for el in dict_["sizes_main"]]
@@ -422,11 +374,6 @@ class ProxyLeapNet(BaseProxy):
             self._layer_act = str(dict_["_layer_act"])
         else:
             self._layer_act = None
-
-        self._time_train = float(dict_["_time_train"])
-        self._time_predict = float(dict_["_time_predict"])
-
-        self._metadata_loaded = True
 
     def _extract_data(self, indx_train):
         """
@@ -482,19 +429,3 @@ class ProxyLeapNet(BaseProxy):
         tmp = [el.numpy() for el in predicted_state]
         resy = [arr * sd_ + m_ for arr, m_, sd_ in zip(tmp, self._m_y, self._sd_y)]
         return resy
-
-    def get_attr_output_name(self, obs):
-        """
-        Get the name (that will be used when saving the model) of each ouput of the proxy.
-
-        It is recommended to overide this function
-
-        Parameters
-        ----------
-        obs
-
-        Returns
-        -------
-
-        """
-        return copy.deepcopy(self.attr_y)

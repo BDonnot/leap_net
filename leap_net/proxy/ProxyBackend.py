@@ -26,26 +26,29 @@ class ProxyBackend(BaseProxy):
     def __init__(self,
                  path_grid_json,  # complete path where the grid is represented as a json file
                  name="dc_approx",
-                 attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),  # TODO refacto that in BaseProxy
-                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # TODO refacto that in BaseProxy
-                 is_dc=True
+                 is_dc=True,
+                 attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),  # input that will be given to the proxy
+                 attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # output that we want the proxy to predict
                  ):
-        BaseProxy.__init__(self, name=name, lr=0, max_row_training_set=1, eval_batch_size=1, train_batch_size=1)
+        BaseProxy.__init__(self,
+                           name=name,
+                           max_row_training_set=1,
+                           eval_batch_size=1,
+                           attr_x=attr_x,
+                           attr_y=attr_y)
 
         # datasets
         self._supported_output = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"}
         self.is_dc = is_dc
         for el in ("prod_p", "prod_v", "load_p", "load_q", "topo_vect"):
-            if not el in attr_x:
+            if not el in self.attr_x:
                 raise RuntimeError(f"The DC approximation need the variable \"{el}\" to be computed.")
-        for el in attr_y:
+        for el in self.attr_y:
             if not el in self._supported_output:
                 raise RuntimeError(f"This solver cannot output the variable \"{el}\" at the moment. "
                                    f"Only possible outputs are \"{self._supported_output}\".")
 
         # specific part to dc model
-        self.attr_x = attr_x  # TODO refacto that in BaseProxy
-        self.attr_y = attr_y  # TODO refacto that in BaseProxy
         self.solver = PandaPowerBackend()
         self.solver.set_env_name(self.name)
         self.solver.load_grid(path_grid_json)  # the real powergrid of the environment
@@ -56,32 +59,11 @@ class ProxyBackend(BaseProxy):
         # internal variables (speed optimisation)
         self._indx_var = {}
         for el in ("prod_p", "prod_v", "load_p", "load_q", "topo_vect"):
-            self._indx_var[el] = attr_x.index(el)
-
-        # the dataset (computed on the fly)
-        self._my_x = None  # TODO refacto that in BaseProxy
-        self._my_y = None  # TODO refacto that in BaseProxy
-        self._sz_x = None  # TODO refacto that in BaseProxy
-        self._sz_y = None  # TODO refacto that in BaseProxy
+            self._indx_var[el] = self.attr_x.index(el)
 
     def build_model(self):
         """build the neural network used as proxy"""
         pass
-
-    def store_obs(self, obs):
-        """
-        store the observation into the "training database"
-        """
-        # save the observation in the database
-        for attr_nm, inp in zip(self.attr_x, self._my_x):
-            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-        for attr_nm, inp in zip(self.attr_y, self._my_y):
-            inp[self.last_id, :] = self._extract_obs(obs, attr_nm)
-
-        super().store_obs(obs)
-
-    def get_output_sizes(self):
-        return copy.deepcopy(self._sz_y)
 
     def init(self, obss):
         """
@@ -98,25 +80,7 @@ class ProxyBackend(BaseProxy):
         if self.max_row_training_set != 1:
             raise RuntimeError("For now, a proxy based on a backend can only work with a database of 1 element ("
                                "the backend is applied sequentially to each element)")
-        obs = obss[0]
-        self.__db_full = False
-        # save the input x
-        self._my_x = []
-        self._sz_x = []
-        for attr_nm in self.attr_x:
-            arr_ = self._extract_obs(obs, attr_nm)
-            sz = arr_.size
-            self._sz_x.append(sz)
-            self._my_x.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
-
-        # save the output y
-        self._my_y = []
-        self._sz_y = []
-        for attr_nm in self.attr_y:
-            arr_ = self._extract_obs(obs, attr_nm)
-            sz = arr_.size
-            self._sz_y.append(sz)
-            self._my_y.append(np.zeros((self.max_row_training_set, sz), dtype=self.dtype))
+        super().init(obss)
 
     def get_true_output(self, obs):
         """
@@ -124,6 +88,7 @@ class ProxyBackend(BaseProxy):
 
         This "true output" is computed based on the observation and corresponds to what the proxy is meant to
         approximate (but the reference)
+
         Parameters
         ----------
         obs
@@ -136,63 +101,6 @@ class ProxyBackend(BaseProxy):
         for attr_nm in self.attr_y:
             res.append(self._extract_obs(obs, attr_nm))
         return res
-
-    def get_metadata(self):
-        """
-        returns the metadata (model shapes, attribute used, sizes, etc.)
-
-        this is used when saving the model
-        """
-        res = {}
-        res["attr_x"] = [str(el) for el in self.attr_x]
-        res["attr_y"] = [str(el) for el in self.attr_y]
-
-        res["_sz_x"] = [int(el) for el in self._sz_x]
-        res["_sz_y"] = [int(el) for el in self._sz_y]
-
-        res["_time_train"] = float(self._time_train)
-        res["_time_predict"] = float(self._time_predict)
-        return res
-
-    def load_metadata(self, dict_):
-        """
-        load the metadata of this neural network (also called meta parameters) from a dictionary
-
-        Notes
-        -----
-        modify self!
-
-        """
-        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
-        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
-
-        self._sz_x = [int(el) for el in dict_["_sz_x"]]
-        self._sz_y = [int(el) for el in dict_["_sz_y"]]
-
-        self._time_train = float(dict_["_time_train"])
-        self._time_predict = float(dict_["_time_predict"])
-
-    def get_attr_output_name(self, obs):
-        """
-        Get the name (that will be used when saving the model) of each ouput of the proxy.
-
-        It is recommended to overide this function
-
-        Parameters
-        ----------
-        obs
-
-        Returns
-        -------
-
-        """
-        return copy.deepcopy(self.attr_y)
-
-    def save_weights(self, path, ext=".h5"):
-        pass
-
-    def load_weights(self, path, ext=".h5"):
-        pass
 
     def _extract_data(self, indx_train):
         """
