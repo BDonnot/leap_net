@@ -58,6 +58,12 @@ class BaseNNProxy(BaseProxy):
         self._layer_act = layer_act
 
         self._lr = lr
+
+        self.train_iter = 0  # number of training iteration
+        # model optimizer
+        self._schedule_lr_model = None
+        self._optimizer_model = None
+
         self.train_batch_size = train_batch_size
         if self.max_row_training_set < self.train_batch_size:
             raise RuntimeError(f"You cannot use a batch size of {self.train_batch_size} with a dataset counting at"

@@ -16,7 +16,9 @@ from collections.abc import Iterable
 
 class BaseProxy(ABC):
     """
-    Base class you have to implement if you want to use easily a proxy
+    Base class you have to implement if you want to use easily a proxy.
+
+    So example of such a class are given in `ProxyBackend` and `ProxyLeapNet`
 
     Attributes
     ----------
@@ -32,7 +34,59 @@ class BaseProxy(ABC):
         for computation time reasons, it can be useful to batch multiple data and predict more than one state at
         the same time.
 
-    # TODO documentation of the database, attr_x, and attr_y
+    dtype: ``type``
+        Type of data used to store / retrieve it. By default it's `np.float32`
+
+    last_id: ``int``
+        The id in the database :attr:`_my_x` and :attr:`_my_y` corresponding to the last element entered.
+
+    _global_iter: ``int``
+        Total number of data received
+
+    __first_eval: ``bool``
+        Has the model been used to make prediction or not.
+
+    _model: ``anything``
+        The implementation of the proxy, it can be a grid2op backend, or a tensorflow model for example
+
+    _time_predict: ``float``
+        Time spent (measured in seconds) to make predictions with the proxy, only counting the evaluation time and
+        not the time spent in acquiring the data.
+
+    _time_train: ``float``
+        Time spent (measured in seconds) to train the proxy, only counting the training time and not the time
+        spent in acquiring the data.
+
+    attr_x: ``list`` of ``str``
+        Name of the attribute sof the observation that are used as input to the proxy
+
+    attr_y: ``list`` of ``str``
+        Name of the attributes of the observation that are predicted by the proxy
+
+    _my_x: ``list`` of ``numpy.ndarray``
+        This represents the training dataset that is filled "on the fly" by running grid2op environment. This part
+        of the dataset is the input of the proxy. We don't recommend to modify this
+
+    _my_y: ``list`` of ``numpy.ndarray``
+        This represents the training dataset that is filled "on the fly" by running grid2op environment. This part
+        of the dataset is the real output of what the proxy should predict. We don't recommend to modify this
+
+    _sz_x: ``list`` of ``int``
+        For each input of the proxy, it gives its size. We don't recommend to modify this
+
+    _sz_y: ``list`` of ``int``
+        For each output of the proxy, it gives its size. We don't recommend to modify this
+
+    _metadata_loaded: ``bool``
+        Whether the metadata of the model have been loaded from hard drive, or created at the initialization of the
+        model.
+
+    _last_id_eval: ``int``
+        Internal, do not use
+
+    __db_full: ``bool``
+        Internal, do not use
+
     """
     DEBUG = False
 
@@ -49,10 +103,6 @@ class BaseProxy(ABC):
         # data type
         self.dtype = np.float32
 
-        # model optimizer
-        self._schedule_lr_model = None
-        self._optimizer_model = None
-
         # to fill the training / test dataset
         self.max_row_training_set = max_row_training_set
         self.eval_batch_size = eval_batch_size
@@ -61,8 +111,8 @@ class BaseProxy(ABC):
                                f" most {self.max_row_training_set} rows. "
                                "Please either increase \"max_row_training_set\" or decrease \"batch_size\""
                                "(hint: batch_size>=max_row_training_set).")
-        # training part
-        self.train_iter = 0  # number of training iteration
+
+        # database handling
         self.last_id = 0  # last index in the database
         self._global_iter = 0  # total number of data received
         self.__db_full = None  # is the "training database" full
@@ -95,7 +145,7 @@ class BaseProxy(ABC):
         """
         build the model that is used inside of the proxy
 
-        can be called multiple times
+        Be careful this function can be called multiple times
 
         """
         pass
@@ -107,7 +157,7 @@ class BaseProxy(ABC):
 
         It's analogous to the `train_model` but instead of training it gives the prediction of the neural network.
 
-        It's called with:
+        It's called when the proxy is being evaluated with:
 
         .. code-block:: python
 
@@ -120,11 +170,18 @@ class BaseProxy(ABC):
 
         Parameters
         ----------
-        data
+        data: ``list`` of ``float``
+            The list of arrays corresponding to each attribute in `attr_x`: the input of the proxy.
+
+        training: ``bool``
+            Whether the model is being trained or not
 
         Returns
         -------
-
+        res: ``list`` of ``float``
+            The list of the predictions made by the proxy: each element of the list
+            corresponding to the prediction of the variable in `attr_y` - so each element is a vector- made with
+            input in `data`
         """
         pass
 
@@ -139,6 +196,12 @@ class BaseProxy(ABC):
         This function may be overridden but in that case we recommend to call the method of the super class.
 
         If it's overridden, we also recommend to call `_init_database_shapes`
+
+        Parameters
+        ----------
+        obss: ``list`` of ``grid2op.Observation``
+            List of observations used to inialize this model, for example on which the model will compute the mean
+            and standard deviation to scale the data.
 
         """
 
@@ -185,6 +248,12 @@ class BaseProxy(ABC):
         to benefit at maximum from this Proxy interface.
 
         This function may be overridden but in that case we recommend to call the method of the super class
+
+        Parameters
+        ----------
+        obs: ``grid2op.Observation``
+            The observation to store in the database.
+
         """
         # update the counters
         # store only the first batch if DEBUG otherwise store all
@@ -208,6 +277,11 @@ class BaseProxy(ABC):
         Notes
         -----
         This function is expected to modify the instance on which it is called (*ie* `self`)
+
+        Parameters
+        ----------
+        dict_: ``dict``
+            The dictionary of parameter that is used to initialize this instance.
 
         """
         self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
@@ -234,6 +308,11 @@ class BaseProxy(ABC):
         -----
         We assume that the metadata are "json serializable".
 
+        Returns
+        --------
+        res: ``dict``
+            A dictionary containing the necessary information to initialize the class as when it was saved.
+
         """
         res = dict()
         res["attr_x"] = [str(el) for el in self.attr_x]
@@ -246,6 +325,9 @@ class BaseProxy(ABC):
 
         return res
 
+    #######################################################################
+    ##  All functions bellow can be implemented in your specific proxy   ##
+    #######################################################################
     def load_data(self, path, ext=".h5"):
         """
         You need to override this function if the proxy, in order to be functional need to load some data
@@ -264,31 +346,53 @@ class BaseProxy(ABC):
         Save extra information that might be required by the model. For example this saves the weights of
         some neural network if needed.
 
+        This function should be overridden
+
         Notes
         -----
         We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
 
+        Parameters
+        ----------
+        path: ``str``
+            The path at which the model will be saved
+        ext: ``str``
+            The extension used to save the model (for example ".h5" should output a file named xxx.h5)
+
         """
         pass
 
-    #######################################################################
-    ##  All functions bellow can be implemented in your specific proxy   ##
-    #######################################################################
     def _extract_data(self, indx_train):
         """
         extract from the training dataset, the data with indexes `indx_train`
 
-        The model will be trained with :
+        The model will be trained with a code equivalent to:
 
         .. code-block:: python
 
             data = self._extract_data(indx_train)
-            batch_losses = self._model.train_on_batch(*data)
+            batch_losses = self._train_model(data)
 
-        This function can be overridden
+        This function is also used for the evaluation of the model in the following manner:
+
+        .. code-block:: python
+
+            data = self._extract_data(indx_val)
+            res = self._make_predictions(data, training=False)
+
+        This function can be overridden, but we don't necessarily recommend to do so
+
+        Parameters
+        ----------
+        indx_train: ``numpy.ndarray``, ``int``
+            The index of the data that needs to be retrieved from the database `_my_x` and `_my_y`
 
         Returns
         -------
+        X:
+            The value of the input data
+        Y:
+            The value of the desired output of the proxy
 
         """
 
@@ -304,7 +408,8 @@ class BaseProxy(ABC):
 
         Returns
         -------
-
+        res: ``list`` of ``int``
+            The list representing the sizes of each output
         """
         return copy.deepcopy(self._sz_y)
 
@@ -316,11 +421,13 @@ class BaseProxy(ABC):
 
         Parameters
         ----------
-        obs
+        obs: ``grid2op.BaseObservation``
+            The observation (unique) from which to retrieve the data
 
         Returns
         -------
-
+        res:
+            The list of the attribute name (note that the observation might not be used at all)
         """
         return copy.deepcopy(self.attr_y)
 
@@ -335,10 +442,13 @@ class BaseProxy(ABC):
 
         Parameters
         ----------
-        obs
+        obs: ``grid2op.BaseObservation``
+            The observation (unique) from which to retrieve the data
 
         Returns
         -------
+        res: ``list of float``
+            The real values of each output as extracted from the observation.
 
         """
         res = []
@@ -348,9 +458,21 @@ class BaseProxy(ABC):
 
     def save_tensorboard(self, tf_writer, training_iter, batch_losses):
         """
-        save extra information to tensorboard
+        Save the information of the last training iteration in tensorboard.
 
-        This function can be overridden
+        This function may be overridden
+
+        Parameters
+        ----------
+        tf_writer:
+            Tensorflow writer on which to write the data
+
+        training_iter: ``int``
+            Current training iteration
+
+        batch_losses: ``list of float``
+            The losses for each variables that the proxy is supposed to predict
+
         """
         pass
 
@@ -358,16 +480,46 @@ class BaseProxy(ABC):
         """
         This function is used to post process the data that are the output of the proxy.
 
+        For example, this can be used by a proxy using a neural network, if some scaling have been done, to
+        "unscale" the predictions
+
+        This function can be overridden
+
         Parameters
         ----------
-        predicted_state
+        predicted_state: ``list`` of ``float``
+            For each variables, it contains the (raw) predictions of the proxy
 
         Returns
         -------
+        res: ``list`` of ``float``
+            For each variables, it should return the post processed values.
 
         """
         return predicted_state
 
+    def _extract_obs(self, obs, attr_nm):
+        """
+        Extract a given attribute from an observation.
+
+        This function can be overridden if you want to extract non attribute (for example results of a method) of
+        an observation.
+
+        Parameters
+        ----------
+        obs:
+            Grid2op action on which we want to extract something
+
+        attr_nm:
+            Name of the attribute we want to extract
+
+        Returns
+        -------
+        res:
+            The array representing what need to be extracted from the observation
+        """
+        return getattr(obs, attr_nm)
+    
     #######################################################
     ## We don't recommend to change anything bellow this ##
     #######################################################
@@ -384,28 +536,39 @@ class BaseProxy(ABC):
         Returns
         -------
         None if the proxy has not been trained at this iteration, or the losses
+
         """
         raise RuntimeError("This model cannot be trained!")
 
     def predict(self, force=False):
         """
-        Make the prediction using the proxy.
+        Make the prediction using the proxy. Predictions are made using the last "eval_batch_size" data present on the
+        database.
 
-        Prediction are made "on the fly", which means that the batch size is 1. TODO this is not true anymore
+        The way it's currently implemented is that this function returns ``None`` if not enough data have been
+        gathered since the last call to this function.
 
         We do not recommend to override this function.
+
+        Parameters
+        ----------
+        force: ``bool``
+            Whether to force the predictions or not
 
         Notes
         -----
         It can only be called if the proxy has been "filled" with the observations before.
 
-        It can be filled by batches
+        If the "prediction batch size" is not 1, this function will sometimes return ``None``.
 
         Returns
         -------
         res:
             All the predictions made by the proxy. Note that these predictions should be directly comparable with
-            the input data and (so if a scaling is applied, they should be unscaled)
+            the input data and (so if a scaling is applied, they should be unscaled).
+
+            res is sometimes ``None``
+
         """
         if (self._global_iter % self.eval_batch_size != 0) and (not force):
             return None
@@ -425,7 +588,8 @@ class BaseProxy(ABC):
 
     def _save_dict(self, li, val):
         """
-        save the metadata of this proxy into a valid representation of self.
+        save the metadata of this proxy into a valid representation of `self`. It's a utility function to convert
+        into "json serializable object" the numpy data.
 
         It is a helper to convert data in float format from either a list or a single numpy floating point.
 
@@ -532,25 +696,3 @@ class BaseProxy(ABC):
 
     def _is_db_full(self):
         return self.__db_full
-
-    def _extract_obs(self, obs, attr_nm):
-        """
-        Extract a given attribute from an observation.
-
-        This function can be overridden if you want to extract non attribute (for example results of a method) of
-        an observation.
-
-        Parameters
-        ----------
-        obs:
-            Grid2op action on which we want to extract something
-
-        attr_nm:
-            Name of the attribute we want to extract
-
-        Returns
-        -------
-        res:
-            The array representing what need to be extracted from the observation
-        """
-        return getattr(obs, attr_nm)
