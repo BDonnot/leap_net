@@ -80,7 +80,7 @@ And it must absolutely implement the following methods:
 - `build_model()`: is used to create the proxy
 - `_make_predictions(data)`: is used when the proxy is asked to make some predictions from the data given as input.
 
-ANd optionnally, the "most common" methods that can be implemented are:
+And optionnally, the "most common" methods that can be implemented are:
 
 - `init(obss)`: obss is a list of observations. This method is used at the beginning (before the proxy is being used)
   to perform initialized some information (*eg* the mean and standard deviation if you want to scale the data for 
@@ -92,9 +92,9 @@ ANd optionnally, the "most common" methods that can be implemented are:
   instance with it
 - `get_metadata()`: as opposed to the `load_metadata` function, this one should output a valid dictionary that 
   represents the metadata of the proxy (see example in the bullet point above)
-- `store_obs(obs)`: store a single observation in the database. We are working on simplifiying this part.
-
-TODO : add load_data and save_data
+- `load_data(path)`: load the data stored at the location "path" (data includes for example the weights of the 
+  neural network)
+- `save_data(path)`: save the data of the proxy (*eg* the weights of the neural network for example)
 
 And this is it. Nothing else is required.
 
@@ -105,8 +105,13 @@ For examples of usage, there are currently 2 implemented proxies:
 
 ## Train and evaluate a proxy
 After having exposed how to create a class representing a proxy in the previous section, in this section we explain
-how to first train a proxy, and then how to evaluate its performance (and what informations can be saved).
+how to first train a proxy, and then how to evaluate its performance (and what information can be saved).
 
-TODO 
+Once a proxy is created, it's possible to train it with a standard database, by loading data from the hard drive, and
+use the standard method to train it.
+
+### Training a proxy
+Not all proxies require training, for example a proxy based on the DC approximation do not require any training
+at all. But for proxies that requires it (*eg* proxy based on machine learning method) there is a specific 
 
 

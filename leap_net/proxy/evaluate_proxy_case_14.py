@@ -186,5 +186,4 @@ def main(
 
 
 if __name__ == "__main__":
-    li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
-    main(li_batch_size=li_sizes)
+    main()

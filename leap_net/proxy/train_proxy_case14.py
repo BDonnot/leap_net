@@ -12,7 +12,8 @@ import warnings
 import tensorflow as tf
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
-from leap_net.proxy.NRMSE import nrmse
+from leap_net.metrics import nrmse
+from leap_net.metrics import pearson_r
 
 import grid2op
 from grid2op.Chronics import MultifolderWithCache
@@ -26,6 +27,7 @@ from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
 DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "MAE_avg": mean_absolute_error,
                    "NRMSE_avg": nrmse,
+                   "pearson_r_avg": pearson_r,
                    "MSE": lambda y_true, y_pred: mean_squared_error(
                        y_true, y_pred,
                        multioutput="raw_values"),
@@ -33,6 +35,9 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                        y_true, y_pred,
                        multioutput="raw_values"),
                    "NRMSE": lambda y_true, y_pred: nrmse(
+                       y_true, y_pred,
+                       multioutput="raw_values"),
+                   "pearson_r": lambda y_true, y_pred: pearson_r(
                        y_true, y_pred,
                        multioutput="raw_values"),
                    }

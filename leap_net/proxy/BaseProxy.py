@@ -486,11 +486,11 @@ class BaseProxy(ABC):
         elif attr_nm in ["load_v", "prod_v"]:
             # default values are good enough
             # stds are almost 0 for loads, this leads to instability
-            mult_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
+            add_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
+            mult_tmp = 1.0  # np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
         elif attr_nm in ["v_or", "v_ex"]:
             # default values are good enough
             add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
-            # stds are almost 0 for loads, this leads to instability
             mult_tmp = np.mean([self._extract_obs(ob, attr_nm) for ob in obss], axis=0).astype(self.dtype)
         elif attr_nm == "hour_of_day":
             add_tmp = self.dtype(12.)
@@ -514,7 +514,7 @@ class BaseProxy(ABC):
         elif attr_nm in ["a_or", "a_ex"]:
             add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
             mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
-            mult_tmp[mult_tmp <= 1e-2] = 1.0
+            mult_tmp[mult_tmp <= 1.] = 1.0
         elif attr_nm == "line_status":
             # encode back to 0: connected, 1: disconnected
             add_tmp = self.dtype(1.)
