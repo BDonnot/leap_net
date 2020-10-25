@@ -18,6 +18,8 @@ from grid2op.Agent import BaseAgent
 
 from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
 
+# TODO merge "reproducible exp" as a method of AgentWithProxy
+
 
 class AgentWithProxy(BaseAgent):
     """
@@ -176,7 +178,8 @@ class AgentWithProxy(BaseAgent):
         # save the model at the end
         self.save(self.save_path)
 
-    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None, verbose=0, save_values=True):
+    def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None,
+                 verbose=0, save_values=True):
         """
 
         Parameters
@@ -362,6 +365,7 @@ class AgentWithProxy(BaseAgent):
 
         """
         # TODO save the "x" given to the proxy here too
+
         # compute the metrics (if any)
         dict_metrics = {}
         dict_metrics["predict_step"] = int(self.global_iter)

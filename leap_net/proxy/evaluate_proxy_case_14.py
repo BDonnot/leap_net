@@ -142,9 +142,9 @@ def main(
                                           max_row_training_set=max(total_evaluation_step, pred_batch_size),
                                           eval_batch_size=pred_batch_size,  # min(total_evaluation_step, 1024*64)
                                           layer=layer)
-            agent_with_tmp= AgentWithProxy(actor_batch_size,
-                                           proxy=proxy_eval_tmp,
-                                           logdir=None)
+            agent_with_tmp = AgentWithProxy(actor_batch_size,
+                                            proxy=proxy_eval_tmp,
+                                            logdir=None)
 
             dict_metrics = agent_with_tmp.evaluate(env,
                                                    total_evaluation_step=pred_batch_size,

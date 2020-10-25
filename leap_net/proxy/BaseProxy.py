@@ -39,7 +39,7 @@ class BaseProxy(ABC):
     def __init__(self,
                  name,
                  max_row_training_set=int(1e5),
-                 eval_batch_size=1024,
+                 eval_batch_size=1,
                  attr_x=("prod_p", "prod_v", "load_p", "load_q", "topo_vect"),  # input that will be given to the proxy
                  attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),  # output that we want the proxy to predict
                  ):
@@ -385,7 +385,7 @@ class BaseProxy(ABC):
         -------
         None if the proxy has not been trained at this iteration, or the losses
         """
-        raise RuntimeError("This model cannot be traine!d")
+        raise RuntimeError("This model cannot be trained!")
 
     def predict(self, force=False):
         """

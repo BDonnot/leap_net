@@ -5,6 +5,7 @@
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
+
 import re
 import os
 import warnings
@@ -99,8 +100,14 @@ def reproducible_exp(env, agent, env_seed=None, chron_id_start=None, agent_seed=
 def main(limit_gpu_memory=True,
          total_train=int(1024)*int(1024),
          env_name="l2rpn_case14_sandbox",
+         # log during training
          save_path="model_saved",
          save_path_tensorbaord="tf_logs",
+         update_tensorboard=256,  # tensorboard is updated every XXX training iterations
+         save_freq=int(1024) * int(64),  # model is saved every save_freq training iterations
+         ext=".h5",  # extension of the file in which you want to save the proxy
+         nb_obs_init=256,  # number of observations that are sent to the proxy to be initialized
+         # dataset / data generation part
          env_seed=42,
          agent_seed=1,
          use_lightsim_if_available=True,
@@ -136,8 +143,8 @@ def main(limit_gpu_memory=True,
     env = create_env(env_name, use_lightsim_if_available=use_lightsim_if_available)
 
     # I select only part of the data, for training
-    # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
-    # env.chronics_handler.real_data.reset()
+    env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
+    env.chronics_handler.real_data.reset()
     obs = env.reset()
 
     # now train the agent
@@ -159,7 +166,11 @@ def main(limit_gpu_memory=True,
                          attr_y=attr_y)
     agent_with_proxy = AgentWithProxy(actor,
                                       proxy=proxy,
-                                      logdir=save_path_tensorbaord
+                                      logdir=save_path_tensorbaord,
+                                      update_tensorboard=update_tensorboard,
+                                      save_freq=save_freq,
+                                      ext=ext,
+                                      nb_obs_init=nb_obs_init
                                       )
 
     # train it
