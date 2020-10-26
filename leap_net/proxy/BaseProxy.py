@@ -335,8 +335,25 @@ class BaseProxy(ABC):
 
         This function may be overridden but in that case we recommend to call the method of the super class
 
-        Returns
-        -------
+        load the weight of the neural network
+        path is the full path (including file name and extension).
+
+        This function can be overridden (for example if your proxy does not use tensorflow or is made of multiple
+        submodule that need to be saved independently)
+
+        This function is used when loading back your proxy.
+
+        Notes
+        -----
+        This function is only called when the metadata (number of layer, size of each layer etc.)
+        have been properly restored (so it supposes load_metadata has been successfully called)
+
+        We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
+
+        We recommend that the file at the "path" is not directly read.
+        Rather, it is better to first copied it into a temporary directory, and then
+        read it. This is to avoid any data corruption when an instance of the model is reading and another
+        is writing to the same file.
 
         """
         pass
@@ -519,7 +536,7 @@ class BaseProxy(ABC):
             The array representing what need to be extracted from the observation
         """
         return getattr(obs, attr_nm)
-    
+
     #######################################################
     ## We don't recommend to change anything bellow this ##
     #######################################################
@@ -630,6 +647,12 @@ class BaseProxy(ABC):
 
         obss is a list of observation obtained from running some environment with just the "actor" acting on
         the grid. The size of this list is set by `AgentWithProxy.nb_obs_init`
+
+        Notes
+        ------
+        for each variables, the data are scaled with:
+
+        data_scaled = (data_raw - add_tmp) / mult_tmp
 
         """
         obs = obss[0]

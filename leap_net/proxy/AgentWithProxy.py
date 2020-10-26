@@ -17,16 +17,57 @@ from collections.abc import Iterable
 from grid2op.Agent import BaseAgent
 
 from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
+import numpy as np
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOT_OK = True
+except ImportError:
+    MATPLOT_OK = False
 
 # TODO merge "reproducible exp" as a method of AgentWithProxy
+# TODO implement a "I have gathered enough data, now let me learn without gathering more"
+
+
+class PlotErrorOnGrid:
+    """
+    this class is used to "project" on the grid the error of some models.
+    """
+    def __init__(self, env):
+        from grid2op.PlotGrid import PlotMatplot
+        self.plot_helper = PlotMatplot(env.observation_space)
+        self._line_attr = {"a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "v_or", "v_ex"}
+        self._load_attr = {"load_p", "load_q", "load_v"}
+        self._prod_attr = {"prod_p", "prod_q", "prod_v"}
+
+    def get_fig(self, attr_nm, metrics):
+        fig = None
+        try:
+            # only floating point values are supported at the moment
+            metrics = metrics.astype(np.float)
+        except Exception as exc_:
+            return None
+
+        if np.all(~np.isfinite(metrics)):
+            # no need to plot a "all nan" vector
+            return None
+
+        if attr_nm in self._prod_attr:
+            # deals generator attributes
+            self.plot_helper.assign_gen_palette(increase_gen_size=1.5)
+            fig = self.plot_helper.plot_info(gen_values=metrics, coloring="gen")
+            self.plot_helper.restore_gen_palette()
+        elif attr_nm in self._line_attr:
+            # deals with lines attributes
+            self.plot_helper.assign_line_palette()
+            fig = self.plot_helper.plot_info(line_values=metrics, coloring="line")
+            self.plot_helper.restore_line_palette()
+        return fig
 
 
 class AgentWithProxy(BaseAgent):
     """
     Add to an agent a proxy leap net (usefull to train a leap net model)
-
-    TODO add an example of usage
-
 
     """
     def __init__(self,
@@ -58,7 +99,7 @@ class AgentWithProxy(BaseAgent):
         else:
             self._tf_writer = None
         self.update_tensorboard = update_tensorboard
-        self.save_freq = save_freq
+        self.save_freq = int(save_freq)
 
         # save load
         if re.match(r"^\.", ext) is None:
@@ -204,6 +245,12 @@ class AgentWithProxy(BaseAgent):
         -------
 
         """
+        error_plot = None
+        try:
+            error_plot = PlotErrorOnGrid(env)
+        except Exception as exc_:
+            pass
+
         done = False
         reward = env.reward_range[0]
         self.is_training = False
@@ -251,7 +298,7 @@ class AgentWithProxy(BaseAgent):
                     break
         # save the results and compute the metrics
         # TODO save the real x's too!
-        return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose, save_values)
+        return self._save_results(obs, save_path, metrics, pred_val, true_val, verbose, save_values, error_plot)
 
     def save(self, path):
         """
@@ -346,8 +393,18 @@ class AgentWithProxy(BaseAgent):
         if self.train_iter % self.save_freq == 0:
             self.save(self.save_path)
 
-    def _save_results(self, obs, save_path, metrics, pred_val, true_val, verbose, save_values=True):
+    def _save_results(self, obs, save_path, metrics, pred_val, true_val, verbose,
+                      save_values=True, error_plot=None):
         """
+        This function will save the results of the evaluation of the proxy in multiple form:
+
+        - all the "ground truth" for all the variable that the proxy needs to predict
+        - all the predicted values for all the variables that the proxy predicted
+        - the timing and all metrics in a "metrics.json" file
+        - the metadata of the model in the "metada.json" file
+        - the data of the model (depending on the model)
+        - for all metrics that have been computed, an attempt to display on the figure where the errors are located (
+          it uses the grid2op.PlotGrid module)
 
         Parameters
         ----------
@@ -359,6 +416,8 @@ class AgentWithProxy(BaseAgent):
         verbose
         save_values: ``bool``
             Do I save the arrays (of true and predicted values). If ``False`` only the json is saved
+        error_plot:
+            Utility to plot the error on the grid in a matplotlib figures
 
         Returns
         -------
@@ -371,6 +430,7 @@ class AgentWithProxy(BaseAgent):
         dict_metrics["predict_step"] = int(self.global_iter)
         dict_metrics["predict_time"] = float(self._proxy.get_total_predict_time())
         dict_metrics["avg_pred_time_s"] = float(self._proxy.get_total_predict_time()) / float(self.global_iter)
+
         if metrics is not None:
             array_names = self._proxy.get_attr_output_name(obs)
             for metric_name, metric_fun in metrics.items():
@@ -382,12 +442,20 @@ class AgentWithProxy(BaseAgent):
                         if verbose >= 2:
                             print(f"{metric_name} for {nm}: {tmp}")  # don't print not to overload the display
                         dict_metrics[metric_name][nm] = [float(el) for el in tmp]
+
+                        # plot the error on the grid layout
+                        if error_plot is not None and save_path is not None and MATPLOT_OK:
+                            fig = error_plot.get_fig(nm, tmp)
+                            if fig is not None:
+                                save_path_fig = os.path.join(save_path, self.get_name())
+                                if not os.path.exists(save_path_fig):
+                                    os.mkdir(save_path_fig)
+                                fig.savefig(os.path.join(save_path_fig, f"{metric_name}_{nm}.pdf"))
+                                plt.close(fig)
                     else:
                         if verbose >=1:
                             print(f"{metric_name} for {nm}: {tmp:.2f}")
                         dict_metrics[metric_name][nm] = float(tmp)
-                # TODO if installed, use the grid2op plotMatplot to project this data on the grid and get a pdf of
-                # TODO where the errors are located
 
         # save the numpy arrays (if needed)
         if save_path is not None:

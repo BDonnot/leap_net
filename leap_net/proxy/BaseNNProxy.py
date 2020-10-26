@@ -26,14 +26,34 @@ class BaseNNProxy(BaseProxy):
     """
     This class serves as base class for all proxy made from neural network with tensorflow
 
+    We recommend to  inherit from this class if you are to code a neural network based proxy (using tensorflow).
+    In particular the :func:`BaseNNProxy.train` function is not trivial to implement correctly.
+
+
     Attributes
     ----------
+    train_iter: ``int``
+        The current number of training iteration
+
     train_batch_size: ``int``
         An integer > 0. It represents the training batch size of the proxy. When the proxy is trained, it tells
         how many "state" are feed at once.
 
-    lr: ``float``
+    _lr: ``float``
         The learning rate (discarded when the proxy do not need to be learned)
+
+    _layer_fun: ``tensorflow.keras.layers``
+        The "function" representing each layers. Be careful, this is not serialized and so if you want to
+        save / reload the model, you need to specify the same function manually.
+
+    _layer_act: ``str``
+        The activation function of each layers. Should be a string.
+
+    _optimizer_model:
+        Represents the optimizer of the neural network
+
+    _schedule_lr_model:
+        internal, do not use
     """
     def __init__(self,
                  name,
@@ -84,7 +104,7 @@ class BaseNNProxy(BaseProxy):
         .. code-block:: python
 
             data = self._extract_data([last_index])
-            tmp = self.make_predictions(data)
+            tmp = self._make_predictions(data)
             res = self._post_process(tmp)
 
         This function can be overridden (for example if your proxy does not use tensorflow)
@@ -93,33 +113,105 @@ class BaseNNProxy(BaseProxy):
 
         Parameters
         ----------
-        data
+        data:
+            The input data on which the model will make the predictions (list of numpy arrays)
+        training: ``bool``
+            Whether this method is used to make prediction during training, or not
 
         Returns
         -------
-
+        res:
+            A list of numpy array that will be post process afterwards. In particular
+             this list must count as many elements as there
+            are elements in `attr_y`.
         """
         return self._model(data, training=training)
 
+    def load_metadata(self, dict_):
+        """
+        this function is used when loading the proxy to restore the meta data
+
+        This function may be overridden but in that case we recommend to call the method of the super class (like
+        this is done here when calling `super().load_metadata(dict_)` )
+
+        Notes
+        -----
+        This function is expected to modify the instance on which it is called (*ie* `self`)
+
+        Parameters
+        ----------
+        dict_: ``dict``
+            The dictionary of parameter that is used to initialize this instance.
+
+        """
+
+        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
+        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
+
+        self._sz_x = [int(el) for el in dict_["_sz_x"]]
+        self._sz_y = [int(el) for el in dict_["_sz_y"]]
+
+        self._time_train = float(dict_["_time_train"])
+        self._time_predict = float(dict_["_time_predict"])
+
+        self._init_database_shapes()
+        super().load_metadata(dict_)
+
+    def get_metadata(self):
+        """
+        should return a dictionary containing all the metadata of this class in a format that is compatible
+        with json serialization.
+
+        This function may be overridden but in that case we recommend to call the method of the super class (like
+        is done here)
+
+        Notes
+        -----
+        We assume that the metadata are "json serializable".
+
+        Returns
+        --------
+        res: ``dict``
+            A dictionary containing the necessary information to initialize the class as when it was saved.
+
+        """
+        res = super().get_metadata()
+        if self._layer_act is not None:
+            res["_layer_act"] = str(self._layer_act)
+        else:
+            # i don't store anything if it's None
+            pass
+
+        return res
+
     def save_data(self, path, ext=".h5"):
         """
-        save the weights of the neural network
-        path is the full path (including file name and extension)
+        Save extra information that might be required by the model. For example this saves the weights of
+        some neural network if needed.
 
-        This function can be overridden (for example if your proxy does not use tensorflow or is made of multiple
-        submodule that need to be saved independently)
-
-        This function is used when loading back your proxy
+        This function should be overridden
 
         Notes
         -----
         We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
+
+        Parameters
+        ----------
+        path: ``str``
+            The path at which the model will be saved
+        ext: ``str``
+            The extension used to save the model (for example ".h5" should output a file named xxx.h5)
 
         """
         self._model.save(os.path.join(path, f"weights{ext}"))
 
     def load_data(self, path, ext=".h5"):
         """
+        You need to override this function if the proxy, in order to be functional need to load some data
+        that are not loaded by the `load_metadata` function.
+
+        This function may be overridden but in that case we recommend to call the method of the super class
+
         load the weight of the neural network
         path is the full path (including file name and extension).
 
@@ -131,13 +223,15 @@ class BaseNNProxy(BaseProxy):
         Notes
         -----
         This function is only called when the metadata (number of layer, size of each layer etc.)
-        have been properly restored (so it supposes load_metadata has been sucessfully called)
+        have been properly restored (so it supposes load_metadata has been successfully called)
 
         We suppose that there is a "." preceding the extension. So ext=".h5" is valid, but not ext="h5"
 
-        The file at the "path" is not directly read. It is first copied into a temporary directory, and then
-        is read. This is to avoid any data corruption when an instance of the model is reading and another
+        We recommend that the file at the "path" is not directly read.
+        Rather, it is better to first copied it into a temporary directory, and then
+        read it. This is to avoid any data corruption when an instance of the model is reading and another
         is writing to the same file.
+
         """
         with tempfile.TemporaryDirectory() as path_tmp:
             nm_file = f"weights{ext}"
@@ -146,19 +240,6 @@ class BaseNNProxy(BaseProxy):
             shutil.copy(os.path.join(path, nm_file), nm_tmp)
             # load this copy (make sure the proper file is not corrupted)
             self._model.load_weights(nm_tmp)
-
-    def _make_optimiser(self):
-        """
-        helper function to create the proper optimizer (Adam) with the learning rates and its decay
-        parameters.
-
-        This function can be overridden (for example if you don't use tensorflow).
-
-        It's not part of the public API that is used outside of your proxy (private method).
-
-        """
-        # schedule = tfko.schedules.InverseTimeDecay(self._lr, self._lr_decay_steps, self._lr_decay_rate)
-        return None, tfko.Adam(learning_rate=self._lr)
 
     def _train_model(self, data):
         """
@@ -193,29 +274,28 @@ class BaseNNProxy(BaseProxy):
         losses = self._model.train_on_batch(*data)
         return losses
 
-    def load_metadata(self, dict_):
+    def _make_optimiser(self):
+        """
+        helper function to create the proper optimizer (Adam) with the learning rates and its decay
+        parameters.
 
-        self.attr_x = tuple([str(el) for el in dict_["attr_x"]])
-        self.attr_y = tuple([str(el) for el in dict_["attr_y"]])
+        This function can be overridden (for example if you don't use tensorflow).
 
-        self._sz_x = [int(el) for el in dict_["_sz_x"]]
-        self._sz_y = [int(el) for el in dict_["_sz_y"]]
+        It's not part of the public API that is used outside of your proxy (private method).
 
-        self._time_train = float(dict_["_time_train"])
-        self._time_predict = float(dict_["_time_predict"])
+        """
+        # schedule = tfko.schedules.InverseTimeDecay(self._lr, self._lr_decay_steps, self._lr_decay_rate)
+        return None, tfko.Adam(learning_rate=self._lr)
 
-        self._init_database_shapes()
-        super().load_metadata(dict_)
+    def save_tensorboard(self, tf_writer, training_iter, batch_losses):
+        """
+        save extra information to tensorboard
 
-    def get_metadata(self):
-        res = super().get_metadata()
-        if self._layer_act is not None:
-            res["_layer_act"] = str(self._layer_act)
-        else:
-            # i don't store anything if it's None
-            pass
-
-        return res
+        In this case i save all the losses for all individual output
+        """
+        for output_nm, loss in zip(self.attr_y, batch_losses):
+            tf.summary.scalar(f"{output_nm}", loss, training_iter,
+                              description=f"MSE for {output_nm}")
 
     #######################################################
     ## We don't recommend to change anything bellow this ##

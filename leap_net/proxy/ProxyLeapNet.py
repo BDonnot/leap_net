@@ -25,6 +25,25 @@ from leap_net.LtauNoAdd import LtauNoAdd
 
 
 class ProxyLeapNet(BaseNNProxy):
+    """
+    This class demonstrate how to implement a proxy based on a neural network with the leap net architecture.
+
+    This proxy is fully functional and some examples of training / evaluation can be found in the scripts
+    `train_proxy_case_14.py`, `train_proxy_case_118.py`, `evaluate_proxy_case_14.py` and
+    `evaluate_proxy_case_118.py`.
+
+    It scales the data and has 3 different datasets:
+
+    - `_my_x` : present in the base class :attr:`BaseNNProxy._my_x` representing the regular input to the neural
+      network
+    - `_my_y` : present in the base class :attr:`BaseNNProxy._my_y` representing what the neural network need
+      to predict
+    - `_my_tau`: representing the "tau" vectors.
+
+    So this class also demonstrates how the generic interface can be adapted in case you want to deal with different
+    data scheme (in this case 2 inputs and 1 outputs)
+
+    """
     def __init__(self,
                  name="leap_net",
                  max_row_training_set=int(1e5),
@@ -95,7 +114,7 @@ class ProxyLeapNet(BaseNNProxy):
                 warnings.warn("We strongly recommend you to get the \"line_status\" as an input vector")
 
     def build_model(self):
-        """build the neural network used as proxy"""
+        """build the neural network used as proxy, in this case a leap net."""
         if self._model is not None:
             # model is already initialized
             return
@@ -206,6 +225,11 @@ class ProxyLeapNet(BaseNNProxy):
     def store_obs(self, obs):
         """
         store the observation into the "training database"
+
+        This would not be necessary to overide it in "regular" model, but in this case we also need to store
+        the "tau".
+
+        The storing of X and Y is done automatically in the base class, hence the call of `super().store_obs(obs)`
         """
         # save the specific part to tau
         for attr_nm, inp in zip(self.attr_tau, self._my_tau):
@@ -213,9 +237,6 @@ class ProxyLeapNet(BaseNNProxy):
 
         # save the observation in the database
         super().store_obs(obs)
-
-    def get_output_sizes(self):
-        return copy.deepcopy(self._sz_y)
 
     def init(self, obss):
         """
@@ -231,13 +252,17 @@ class ProxyLeapNet(BaseNNProxy):
         """
 
         if not self._metadata_loaded:
+            # ini the vector tau
             self._sz_tau = []
             for attr_nm in self.attr_tau:
                 arr_ = self._extract_obs(obss[0], attr_nm)
                 sz = arr_.size
                 self._sz_tau.append(sz)
 
+        # init the rest (attributes of the base class)
         super().init(obss)
+
+        # deals with normalization #TODO some of it might be done in the base class
         # initialize mean and standard deviation
         # but only if the model is being built, not if it has been reloaded
         if not self._metadata_loaded:
@@ -265,12 +290,6 @@ class ProxyLeapNet(BaseNNProxy):
         self._metadata_loaded = True
 
     def get_metadata(self):
-        """
-        returns the metadata (model shapes, attribute used, sizes, etc.)
-
-        this is used when saving the model
-
-        """
         res = super().get_metadata()
         # save attribute for the "extra" database
         res["attr_tau"] = [str(el) for el in self.attr_tau]
@@ -319,15 +338,11 @@ class ProxyLeapNet(BaseNNProxy):
             pass
         return res
 
-    def save_tensorboard(self, tf_writer, training_iter, batch_losses):
-        """save extra information to tensorboard"""
-        for output_nm, loss in zip(self.attr_y, batch_losses):
-            tf.summary.scalar(f"{output_nm}", loss, training_iter,
-                              description=f"MSE for {output_nm}")
-
-        # TODO add the "evaluate on validation episode"
-
     def _init_database_shapes(self):
+        """
+        Again this method is only overriden because the leap net takes inputs in two different ways: the X's
+        and the tau's
+        """
         super()._init_database_shapes()
         self._my_tau = []
         for sz in self._sz_tau:
@@ -368,17 +383,38 @@ class ProxyLeapNet(BaseNNProxy):
 
     def _extract_data(self, indx_train):
         """
-        extract from the training dataset, the data with indexes indx_train
+        extract from the training dataset, the data with indexes `indx_train`
 
-        The model will be trained with :
+        The model will be trained with a code equivalent to:
 
         .. code-block:: python
 
             data = self._extract_data(indx_train)
-            batch_losses = self._model.train_on_batch(*data)
+            batch_losses = self._train_model(data)
+
+        This function is also used for the evaluation of the model in the following manner:
+
+        .. code-block:: python
+
+            data = self._extract_data(indx_val)
+            res = self._make_predictions(data, training=False)
+
+        Here we needed to override it for two reasons:
+
+        - we use 3 different data (X,tau, Y) this is specific to leap net
+        - we wanted to scale the data passed to the neural networks
+
+        Parameters
+        ----------
+        indx_train: ``numpy.ndarray``, ``int``
+            The index of the data that needs to be retrieved from the database `_my_x` and `_my_y`
 
         Returns
         -------
+        X:
+            The value of the input data
+        Y:
+            The value of the desired output of the proxy
 
         """
 
@@ -409,13 +445,8 @@ class ProxyLeapNet(BaseNNProxy):
         """
         This function is used to post process the data that are the output of the proxy.
 
-        Parameters
-        ----------
-        predicted_state
-
-        Returns
-        -------
-
+        In our case we needed to code it because we applied some scaling when the data were "extracted" from the
+        internal database (we overide :func:`ProxyLeapNet._extract_data`)
         """
         tmp = [el.numpy() for el in predicted_state]
         resy = [arr * sd_ + m_ for arr, m_, sd_ in zip(tmp, self._m_y, self._sd_y)]

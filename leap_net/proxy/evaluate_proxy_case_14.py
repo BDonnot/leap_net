@@ -9,7 +9,7 @@
 import re
 import os
 import matplotlib.pyplot as plt
-from leap_net.proxy.train_proxy_case14 import create_env, reproducible_exp, DEFAULT_METRICS
+from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS
 
 from leap_net.ResNetLayer import ResNetLayer
 from leap_net.agents import RandomN1, RandomN2
@@ -31,7 +31,7 @@ def main(
         do_N1 = True,
         do_N2 = True,
         li_batch_size=tuple(),  # if you want to study the impact of the batch size
-        total_evaluation_step=int(1024),  # * int(128),
+        total_evaluation_step=int(1024) * int(128),
         pred_batch_size=int(1024) * int(128),
         save_path_final_results="model_results",  # where the information about the prediction will be stored
         metrics=DEFAULT_METRICS,  # which metrics are used to evaluate the performance of the model
@@ -48,6 +48,11 @@ def main(
     env.chronics_handler.real_data.reset()
     obs = env.reset()
 
+    if save_path_final_results is not None:
+        if not os.path.exists(save_path_final_results):
+            os.mkdir(save_path_final_results)
+            if verbose > 0:
+                print(f"Creating path \"{save_path_final_results}\" where results are stored")
     if do_dc:
         print("####################### \n"
               "## DC approximation  ## \n"

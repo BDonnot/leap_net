@@ -8,105 +8,27 @@
 
 import re
 import os
-import warnings
 
 import tensorflow as tf
-
-from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
-from leap_net.metrics import nrmse
-from leap_net.metrics import pearson_r
-
-import grid2op
-from grid2op.Chronics import MultifolderWithCache
-from grid2op.Parameters import Parameters
 
 from leap_net.ResNetLayer import ResNetLayer
 from leap_net.agents import RandomNN1
 from leap_net.proxy.AgentWithProxy import AgentWithProxy
 from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
 
-DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
-                   "MAE_avg": mean_absolute_error,
-                   "NRMSE_avg": nrmse,
-                   "pearson_r_avg": pearson_r,
-                   "MSE": lambda y_true, y_pred: mean_squared_error(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "MAE": lambda y_true, y_pred: mean_absolute_error(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "NRMSE": lambda y_true, y_pred: nrmse(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "pearson_r": lambda y_true, y_pred: pearson_r(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   }
-
-
-def get_parameters():
-    # generate the environment
-    param = Parameters()
-    param.NO_OVERFLOW_DISCONNECTION = True
-    param.NB_TIMESTEP_COOLDOWN_LINE = 0
-    param.NB_TIMESTEP_COOLDOWN_SUB = 0
-    param.MAX_SUB_CHANGED = 99999
-    param.MAX_LINE_STATUS_CHANGED = 99999
-    param.NB_TIMESTEP_COOLDOWN_SUB = 0
-    return param
-
-
-def create_env(env_name, use_lightsim_if_available=True):
-    """create the grid2op environment with the right parameters and chronics class"""
-    backend_cls = None
-    if use_lightsim_if_available:
-        try:
-            from lightsim2grid.LightSimBackend import LightSimBackend
-            backend_cls = LightSimBackend
-        except ImportError as exc_:
-            warnings.warn("You ask to use lightsim backend if it's available. But it's not available on your system.")
-
-    if backend_cls is None:
-        from grid2op.PandaPowerBackend import PandaPowerBackend
-        backend_cls = PandaPowerBackend
-
-    param = get_parameters()
-
-    env = grid2op.make(env_name,
-                       param=param,
-                       backend=backend_cls(),
-                       chronics_class=MultifolderWithCache
-                       )
-    return env
-
-
-def reproducible_exp(env, agent, env_seed=None, chron_id_start=None, agent_seed=None):
-    """
-    ensure the reproducibility for the data, but NOT for tensorflow
-
-    the environment need to be reset after a call to this method
-    """
-    if env_seed is not None:
-        env.seed(env_seed)
-
-    if chron_id_start is not None:
-        # set the environment to start at the right chronics
-        env.chronics_handler.tell_id(chron_id_start - 1)
-
-    if agent_seed is not None:
-        agent.seed(agent_seed)
+from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS, limit_gpu_usage
 
 
 def main(limit_gpu_memory=True,
-         total_train=int(1024)*int(1024),
+         total_train=int(1024)*int(1024),  # number of observations that will be gathered
          env_name="l2rpn_case14_sandbox",
          # log during training
          save_path="model_saved",
          save_path_tensorbaord="tf_logs",
          update_tensorboard=256,  # tensorboard is updated every XXX training iterations
-         save_freq=int(1024) * int(64),  # model is saved every save_freq training iterations
+         save_freq=int(1024) * int(4),  # model is saved every save_freq training iterations
          ext=".h5",  # extension of the file in which you want to save the proxy
-         nb_obs_init=256,  # number of observations that are sent to the proxy to be initialized
+         nb_obs_init=512,  # number of observations that are sent to the proxy to be initialized
          # dataset / data generation part
          env_seed=42,
          agent_seed=1,
@@ -119,7 +41,7 @@ def main(limit_gpu_memory=True,
          save_path_final_results="model_results",  # where the information about the prediction will be stored
          metrics=DEFAULT_METRICS,  # which metrics are used to evaluate the performance of the model
          verbose=1,  # do I print the results of the model
-         # proxy part
+         # proxy part (sizes are not really "parametrized" this is just "something that works approximately)
          model_name="leapnet_case_14",
          sizes_enc=(20,),
          sizes_main=(150, 150),
@@ -133,11 +55,10 @@ def main(limit_gpu_memory=True,
          attr_x=("prod_p", "prod_v", "load_p", "load_q"),
          attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
          attr_tau=("line_status",),
+         # TODO add the other constructor parameters of the proxy
          ):
     if limit_gpu_memory:
-        physical_devices = tf.config.list_physical_devices('GPU')
-        if len(physical_devices):
-            tf.config.experimental.set_memory_growth(physical_devices[0], True)
+        limit_gpu_usage()
 
     # create the environment
     env = create_env(env_name, use_lightsim_if_available=use_lightsim_if_available)
