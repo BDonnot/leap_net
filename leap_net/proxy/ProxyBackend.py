@@ -6,9 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-import copy
-import numpy as np
-
 from leap_net.proxy.BaseProxy import BaseProxy
 
 # this will be used to compute the DC approximation
@@ -21,7 +18,10 @@ class ProxyBackend(BaseProxy):
     """
     This class implement a "proxy" based on a grid2op backend.
 
-    Only the default PandaPowerBackend is implemented here.
+    Only the default PandaPowerBackend is implemented here though the method used are generic and rely only the
+    interface defined by `grid2op.Backend`.
+
+    It should not cause any trouble to extend this class to deal with other type of Backends than PandaPowerBackend.
     """
     def __init__(self,
                  path_grid_json,  # complete path where the grid is represented as a json file
@@ -67,14 +67,17 @@ class ProxyBackend(BaseProxy):
 
     def init(self, obss):
         """
-        Initialize all the meta data and the database for training
+        initialize the meta data needed for the model to run (obss is a list of observations)
+
+        One of the property of a backend is that it is (for PandaPower or LightSim at least) not able to compute
+        more than one powerflow at a time.
+        This is why we checked here that the dataset size was 1.
 
         Parameters
         ----------
-        obs
-
-        Returns
-        -------
+        obss: ``list`` of ``grid2op.Observation``
+            List of observations used to inialize this model, for example on which the model will compute the mean
+            and standard deviation to scale the data.
 
         """
         if self.max_row_training_set != 1:
@@ -82,29 +85,12 @@ class ProxyBackend(BaseProxy):
                                "the backend is applied sequentially to each element)")
         super().init(obss)
 
-    def get_true_output(self, obs):
-        """
-        Returns, from the observation the true output that has been computed by the environment.
-
-        This "true output" is computed based on the observation and corresponds to what the proxy is meant to
-        approximate (but the reference)
-
-        Parameters
-        ----------
-        obs
-
-        Returns
-        -------
-
-        """
-        res = []
-        for attr_nm in self.attr_y:
-            res.append(self._extract_obs(obs, attr_nm))
-        return res
-
     def _extract_data(self, indx_train):
         """
-        set the solver to the appropriate state
+        The mechanism to set a backend is a bit more complex than for other proxies based on neural networks
+        for example.
+
+        This is why we had to overload this function.
         """
         if indx_train.shape[0] != 1:
             raise RuntimeError("Proxy Backend only supports running on 1 state at a time. "
@@ -125,21 +111,29 @@ class ProxyBackend(BaseProxy):
 
     def _make_predictions(self, data, training=False):
         """
-        compute the dc powerflow
+        compute the dc powerflow.
+
+        In the formalism of grid2op backends, this is done with calling the function "runpf"
         """
         self.solver.runpf(is_dc=self.is_dc)
         return None
 
     def _post_process(self, predicted_state):
         """
-        retrieve the variables of interest from the backend
+        This is a little "hack" to retrieve from the backend only the data that are necessary (in the `_attr_y`).
+
+        The idea here is to loop through the variables, and extract it from the solver (using the method
+        `solver.lines_or_info`, `solver.lines_ex_info`, `solver.loads_info` and `solver.generators_info`
 
         Parameters
         ----------
-        predicted_state
+        predicted_state: ``list`` of ``float``
+            For each variables, it contains the (raw) predictions of the proxy
 
         Returns
         -------
+        res: ``list`` of ``float``
+            For each variables, it should return the post processed values.
 
         """
         predicted_state = []
