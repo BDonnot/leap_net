@@ -11,5 +11,5 @@ from leap_net.proxy.BaseNNProxy import BaseNNProxy
 from leap_net.proxy.ProxyBackend import ProxyBackend
 from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
 from leap_net.proxy.AgentWithProxy import AgentWithProxy
-from leap_net.proxy.train_proxy_case14 import reproducible_exp
-from leap_net.proxy.train_proxy_case14 import DEFAULT_METRICS
+from leap_net.proxy.utils import reproducible_exp
+from leap_net.proxy.utils import DEFAULT_METRICS

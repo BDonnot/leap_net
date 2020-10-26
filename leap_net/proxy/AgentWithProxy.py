@@ -31,7 +31,11 @@ except ImportError:
 
 class PlotErrorOnGrid:
     """
-    this class is used to "project" on the grid the error of some models.
+    this class is used to "project" on the grid the metrics / errors of some proxies.
+
+    it just ensure the projection, and as of creation (October, 26th 2020) it requires a development version
+    of grid2op found at https://github.com/BDonnot/Grid2Op
+
     """
     def __init__(self, env):
         from grid2op.PlotGrid import PlotMatplot
@@ -67,11 +71,13 @@ class PlotErrorOnGrid:
 
 class AgentWithProxy(BaseAgent):
     """
-    Add to an agent a proxy leap net (usefull to train a leap net model)
+    This class allows to easily manipulate an proxy (training et evaluating) coupled with "an actor" that allows
+    for easily evaluate how a proxy deals with data coming from different distribution.
 
+    We do not recommend to modify this class.
     """
     def __init__(self,
-                 agent_action,  # the agent that will take some actions
+                 actor,  # the agent that will take some actions
                  proxy,  # the proxy to train / evaluate
                  logdir=None,  # tensorboard logs
                  update_tensorboard=256,  # tensorboard is updated every XXX training iterations
@@ -79,8 +85,8 @@ class AgentWithProxy(BaseAgent):
                  ext=".h5",  # extension of the file in which you want to save the proxy
                  nb_obs_init=256,  # number of observations that are sent to the proxy to be initialized
                  ):
-        BaseAgent.__init__(self, agent_action.action_space)
-        self.agent_action = agent_action
+        BaseAgent.__init__(self, actor.action_space)
+        self.actor = actor
 
         # to fill the training / test dataset
         self.global_iter = 0
@@ -101,7 +107,7 @@ class AgentWithProxy(BaseAgent):
         self.update_tensorboard = update_tensorboard
         self.save_freq = int(save_freq)
 
-        # save load
+        # save / load
         if re.match(r"^\.", ext) is None:
             # add a point at the beginning of the extension
             self.ext = f".{ext}"
@@ -111,14 +117,15 @@ class AgentWithProxy(BaseAgent):
 
     def init(self, env):
         """
+        Initialize this object.
+
+        It will first run the environment using the actor on a certain number of steps go gather some information
+        and will then initialize the proxy wit these observations.
 
         Parameters
         ----------
-        env
-
-        Returns
-        -------
-
+        env:
+            The grid2op environment
         """
         if self.__is_init:
             return
@@ -133,7 +140,7 @@ class AgentWithProxy(BaseAgent):
                 reward = env.reward_range[0]
                 obs = env.reset()
                 while not done:
-                    act = self.agent_action.act(obs, reward, done)
+                    act = self.actor.act(obs, reward, done)
                     obs, reward, done, info = env.step(act)
                     if not done:
                         nb_obs += 1
@@ -148,42 +155,66 @@ class AgentWithProxy(BaseAgent):
 
     # agent interface
     def act(self, obs, reward, done=False):
+        """
+        Overloading of the grid2op.BaseAgent "act" function that will first store the relevant attribute of the
+        observation in the proxy.
+
+        Then, if the proxy need to be trained, train it.
+
+        And if the proxy need to be saved, save it.
+
+        Parameters
+        ----------
+        obs: ``grid2op.Observation`
+            The current grid2op observation.
+
+        reward: ``float``
+            The reward of the last action, irrelevant for this class but forwarded to the actor.
+
+        done: ``bool``
+            Whether or not there was a game over in the last action. Irrelevant for this class
+             but forwarded to the actor.
+
+        Returns
+        -------
+        act: `grid2op.Action`
+            The action chosen by the actor (remember the proxy does not take any decisions here)
+        """
         self.global_iter += 1
-        self.store_obs(obs)
+        self._store_obs(obs)
         if self.is_training:
             batch_losses = self._proxy.train(tf_writer=self._tf_writer)
             if batch_losses is not None:
                 self.train_iter += 1
                 self._save_tensorboard(batch_losses)
                 self._save_model()
-        return self.agent_action.act(obs, reward, done)
+        return self.actor.act(obs, reward, done)
 
-    def store_obs(self, obs):
+    def train(self, env, total_training_step, save_path=None, load_path=None, verbose=1):
         """
-        store the observation into the "database" for training the model.
+        Completely train the proxy. This run a possible entire procedure to train a proxy.
 
-        Notes
-        -------
-        Will also increment `self.last_id`
+        We highly recommend to call this method to train it.
 
         Parameters
         ----------
-        obs: `grid2op.Action.BaseObservation`
-            The current observation
-        """
-        self._proxy.store_obs(obs)
+        env:
+            The environment
 
-    def train(self, env, total_training_step, save_path=None, load_path=None):
-        """
-        Completely train the proxy
+        total_training_step:
+            The name is completely misleading. This is not the total number of training step, but the total
+            number of data that will be see during training. For example, if the batch size is 32, then
+            then `"total number of training step" = "total number of data that will be see during training" / 32`
+            this number is "total number of data that will be see during training".
 
-        Parameters
-        ----------
-        env
-        total_training_step
+        save_path: ``str``
+            Path where the proxy and some other data from this instance will be saved. (``None`` to deactivate it)
 
-        Returns
-        -------
+        load_path: ``str``
+            If it is not None, data stored at the location "path" will be loaded back.
+
+        verbose: ``int``
+            Degree of verbosity. The more verbose the more information will be plotted on the command line
 
         """
         done = False
@@ -197,7 +228,7 @@ class AgentWithProxy(BaseAgent):
         self.is_training = True
         if not self.__is_init:
             self.init(env)
-        with tqdm(total=total_training_step) as pbar:
+        with tqdm(total=total_training_step, disable=verbose == 0) as pbar:
             # update the progress bar
             pbar.update(self.global_iter)
             obs = self._reboot(env)
@@ -222,12 +253,21 @@ class AgentWithProxy(BaseAgent):
     def evaluate(self, env, total_evaluation_step, load_path, save_path=None, metrics=None,
                  verbose=0, save_values=True):
         """
+        This is a function to evaluate the performance of a proxy.
+
+        We highly recommend to use this method if you coded a model that follows the "proxy" interface.
 
         Parameters
         ----------
-        env
-        total_evaluation_step
-        load_path
+        env:
+            The grid2op environment used
+
+        total_evaluation_step:
+            Total number of states the proxy will be evaluated on
+
+        load_path:
+            Path from which the proxy will be loaded.
+
         metrics:
             dictionary of function, with keys being the metrics name, and values the function that compute
             this metric (on the whole output) that should be `metric_fun(y_true, y_pred)`
@@ -236,19 +276,24 @@ class AgentWithProxy(BaseAgent):
             Path where the results of the models are stored. This is not the same as the "save_path" argument
             of "train")
 
-        verbose
+        verbose: ``int``
+            Degrees of verbosity (the higher the more information will be printed on the command prompt)
 
         save_values: ``bool``
-
+            Do you save the computed values (prediction of the proxy AND ground truth) or just the metrics
 
         Returns
         -------
+        res: ``dict``
+            The dictionary containing the values of each metrics defined in "metrics" for each output variable
+            of the proxy.
 
         """
         error_plot = None
         try:
             error_plot = PlotErrorOnGrid(env)
         except Exception as exc_:
+            # plotting will not be available, but this is not a reason to crash
             pass
 
         done = False
@@ -267,7 +312,7 @@ class AgentWithProxy(BaseAgent):
 
         if not self.__is_init:
             self.init(env)
-        with tqdm(total=total_evaluation_step) as pbar:
+        with tqdm(total=total_evaluation_step, disable=verbose == 0) as pbar:
             # update the progress bar
             pbar.update(self.global_iter)
             obs = self._reboot(env)
@@ -319,6 +364,17 @@ class AgentWithProxy(BaseAgent):
             self._proxy.save_data(path=path_save, ext=self.ext)
 
     def load(self, path):
+        """
+        Load a previously stored experiments from the hard drive.
+
+        This both load data for this class and from the proxy.
+
+        Parameters
+        ----------
+        path: ``str``
+            Where to load the experiment from.
+
+        """
         if path is not None:
             # the following if is to be able to restore a file with possibly a different name...
             if self.is_training:
@@ -332,10 +388,27 @@ class AgentWithProxy(BaseAgent):
             self._proxy.load_data(path=path, ext=self.ext)
 
     def get_name(self):
+        """get the name of this experiment, that by definition (for now) is the name given to the proxy"""
         return self._proxy.name
+
+    ###############
+    ## Utilities ##
+    ##############
+    def _store_obs(self, obs):
+        """
+        Utility function that only (for now) tell the proxy to store the observation.
+
+        Parameters
+        ----------
+        obs: `grid2op.Action.BaseObservation`
+            The current observation
+
+        """
+        self._proxy.store_obs(obs)
 
     # save load model
     def _get_path_nn(self, path, name):
+        """utilities when path and file names are not formatted the same way"""
         if name is None:
             path_model = path
         else:
@@ -351,6 +424,7 @@ class AgentWithProxy(BaseAgent):
             json.dump(obj=me, fp=f)
 
     def _load_metadata(self, path_model):
+        """load the metadata of the experiments (both for me and for the proxy)"""
         json_nm = "metadata.json"
         with open(os.path.join(path_model, json_nm), "r", encoding="utf-8") as f:
             me = json.load(f)
@@ -358,19 +432,14 @@ class AgentWithProxy(BaseAgent):
         self._proxy.load_metadata(me["proxy"])
 
     def _to_dict(self):
+        """output a json serializable dictionary representing the current state of the experiment"""
         res = {}
         res["train_iter"] = int(self.train_iter)
         res["global_iter"] = int(self.global_iter)
         return res
 
-    def _save_dict(self, li, val):
-        if isinstance(val, Iterable):
-            li.append([float(el) for el in val])
-        else:
-            li.append(float(val))
-
     def _from_dict(self, dict_):
-        """modify self! """
+        """update my meta data only, do not affect the proxy"""
         self.train_iter = int(dict_["train_iter"])
         self.global_iter = int(dict_["global_iter"])
 
@@ -390,6 +459,7 @@ class AgentWithProxy(BaseAgent):
                 self._proxy.save_tensorboard(self._tf_writer, self.train_iter, batch_losses[1:])
 
     def _save_model(self):
+        """trigger the saving of the model"""
         if self.train_iter % self.save_freq == 0:
             self.save(self.save_path)
 
@@ -482,348 +552,9 @@ class AgentWithProxy(BaseAgent):
         done = False
         reward = env.reward_range[0]
         obs = env.reset()
-        obs, reward, done, info = env.step(self.agent_action.act(obs, reward, done))
+        obs, reward, done, info = env.step(self.actor.act(obs, reward, done))
         while done:
             # we restart until we find an environment that is not "game over"
             obs = env.reset()
-            obs, reward, done, info = env.step(self.agent_action.act(obs, reward, done))
+            obs, reward, done, info = env.step(self.actor.act(obs, reward, done))
         return obs
-
-
-if __name__ == "__main__":
-    import grid2op
-    from grid2op.Parameters import Parameters
-    from leap_net.agents import RandomN1, RandomNN1, RandomN2
-    from grid2op.Agent import DoNothingAgent
-    from lightsim2grid.LightSimBackend import LightSimBackend
-    from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
-    from leap_net.proxy.NRMSE import nrmse
-    from grid2op.Chronics import MultifolderWithCache
-    from leap_net.proxy.ProxyBackend import ProxyBackend
-    from leap_net.proxy.NRMSE import nrmse
-    from leap_net.ResNetLayer import ResNetLayer
-
-    physical_devices = tf.config.list_physical_devices('GPU')
-    if len(physical_devices):
-        tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
-    total_train = int(1024)*int(32)  # ~1 minutes  # for case 14
-    # total_train = int(1024)*int(128)  # ~4 minutes  # for case 14
-    # total_train = int(1024)*int(1024)  # ~30 minutes [32-35 mins] # for case 14 50 mins for case 118
-    # total_train = int(1024)*int(1024) * int(8)  # ~7h for 118
-    # total_train = int(1024)*int(1024) * int(16)  # ~10h for 14
-    total_evaluation_step = int(1024) * int(32)
-    total_evaluation_step = int(1024)
-    # env_name = "l2rpn_case14_sandbox"
-    # model_name = "Anne_Onymous"
-    # model_name = "realtest_13"
-
-    env_name = "l2rpn_neurips_2020_track2_small"
-    model_name = "118_07"
-    model_name = "test_118_12"
-
-    env_name = "l2rpn_case14_sandbox"
-    model_name = "refacto_14_2"
-
-    save_path = "model_saved"
-    save_path_final_results = "model_results"
-    save_path_tensorbaord = "tf_logs"
-    chron_id_val = 100
-    env_seed = 42
-    agent_seed = 1
-    layerfun = ResNetLayer
-
-    do_train = True
-    do_eval_train = True  # evaluate on the same dataset as the training dataset
-    do_dc = False
-    do_N1 = False
-    do_N2 = False
-    do_hades = True  # TODO not used yet
-
-    # generate the environment
-    param = Parameters()
-    param.NO_OVERFLOW_DISCONNECTION = True
-    param.NB_TIMESTEP_COOLDOWN_LINE = 0
-    param.NB_TIMESTEP_COOLDOWN_SUB = 0
-    param.MAX_SUB_CHANGED = 99999
-    param.MAX_LINE_STATUS_CHANGED = 99999
-    param.NB_TIMESTEP_COOLDOWN_SUB = 0
-    if env_name == "l2rpn_case14_sandbox":
-        env = grid2op.make(env_name,
-                           param=param,
-                           backend=LightSimBackend(),
-                           chronics_class=MultifolderWithCache
-                           )
-        sizes_enc = (20,)
-        sizes_main = (150, 150)
-        sizes_out = (40,)
-        val_regex = ".*99[0-9].*"
-        # if do_train is False:
-        #     model_name = "realtest_13"
-        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
-        li_sizes = [1] #, 3, 10, 30, 100, 300, 1000, 2008, 3000, 10000, 30000, 100000, 300000]
-        attr_y = ("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex")
-        lr = 3e-4
-        scale_main_layer = None
-        scale_input_dec_layer = None
-        scale_input_enc_layer = None
-        layer_act = None
-        # I select only part of the data, for training
-        # env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
-        # env.chronics_handler.real_data.reset()
-        obs = env.reset()
-    elif env_name == "l2rpn_neurips_2020_track2_small":
-        multimix = grid2op.make(env_name,
-                                param=param,
-                                backend=LightSimBackend(),
-                                chronics_class=MultifolderWithCache
-                                )
-        if do_train is False:
-            model_name = "test_118_05"
-        sizes_enc = (60, 60, 60,)
-        sizes_main = (300, 300, 300, 300, 300)
-        sizes_out = (60, )
-        val_regex_train = ".*Scenario_february_[1-9][0-9].*"  # don't include the validation set
-        val_regex = ".*Scenario_february_0[0-9].*"
-        env = multimix[next(iter(sorted(multimix.keys())))]
-        li_sizes = [1, 3, 10, 30, 100, 300, 1000, 2304, 3000, 10000, 30000, 100000]  # , 300000]
-        attr_y = ("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex")
-        lr = 1e-4
-        scale_main_layer = 600
-        scale_input_dec_layer = None
-        scale_input_enc_layer = None
-        layer_act = "relu"
-        # I select only part of the data, for training
-        env.chronics_handler.set_filter(lambda path: re.match(val_regex_train, path) is not None)
-        print("... resetting the chronics")
-        env.chronics_handler.real_data.reset()
-        obs = env.reset()
-        print("done")
-    else:
-        raise RuntimeError("Unsupported environment for now")
-
-    if do_train:
-        agent = RandomNN1(env.action_space, p=0.5)
-        # agent = DoNothingAgent(env.action_space)
-        proxy = ProxyLeapNet(name=model_name,
-                             lr=lr,
-                             layer=layerfun,
-                             layer_act=layer_act,
-                             sizes_enc=sizes_enc,
-                             sizes_main=sizes_main,
-                             sizes_out=sizes_out,
-                             scale_main_layer=scale_main_layer,
-                             scale_input_dec_layer=scale_input_dec_layer,
-                             scale_input_enc_layer=scale_input_enc_layer,
-                             attr_y=attr_y)
-        agent_with_proxy = AgentWithProxy(agent,
-                                          proxy=proxy,
-                                          logdir=save_path_tensorbaord
-                                          )
-
-        # train it
-        agent_with_proxy.train(env,
-                               total_train,
-                               save_path=save_path
-                               )
-
-    if do_eval_train:
-        if not do_train:
-            raise RuntimeError("Impossible to evaluate the agent on the training set if the agent has not been trained."
-                               "Please set \"do_train=True\" if \"do_eval_train==True\"")
-        print("Test with same agent")
-        reproducible_exp(env,
-                         agent=agent,
-                         env_seed=env_seed,
-                         agent_seed=agent_seed,
-                         chron_id=chron_id_val)
-        # hack because i reuse the proxy, just for a test
-        proxy.train_iter = 0  # number of training iteration
-        proxy.last_id = 0  # last index in the database
-        proxy._global_iter = 0  # total number of data received
-        # end of hack
-        dict_metrics = agent_with_proxy.evaluate(env,
-                                                 total_evaluation_step=total_evaluation_step,
-                                                 load_path=os.path.join(save_path, model_name),
-                                                 save_path=save_path_final_results,
-                                                 metrics={"MSE_avg": mean_squared_error,
-                                                          "MAE_avg": mean_absolute_error,
-                                                          "NRMSE_avg": nrmse,
-                                                          "MSE": lambda y_true, y_pred: mean_squared_error(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          "MAE": lambda y_true, y_pred: mean_absolute_error(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          "NRMSE": lambda y_true, y_pred: nrmse(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          },
-                                                 verbose=1
-                                                )
-        print("Test with relaoded agent")
-        reproducible_exp(env,
-                         agent=agent,
-                         env_seed=env_seed,
-                         agent_seed=agent_seed,
-                         chron_id=chron_id_val)
-        pred_batch_size = 1024
-        proxy_eval = ProxyLeapNet(name=f"{model_name}_evalTrain",
-                                  max_row_training_set=max(total_evaluation_step, pred_batch_size),
-                                  eval_batch_size=pred_batch_size,  # min(total_evaluation_step, 1024*64)
-                                  layer=layerfun)
-        agent_with_proxy_evalN1 = AgentWithProxy(agent,
-                                                 proxy=proxy_eval,
-                                                 logdir=None)
-        dict_metrics2 = agent_with_proxy_evalN1.evaluate(env,
-                                                 total_evaluation_step=total_evaluation_step,
-                                                 load_path=os.path.join(save_path, model_name),
-                                                 save_path=save_path_final_results,
-                                                 metrics={"MSE_avg": mean_squared_error,
-                                                          "MAE_avg": mean_absolute_error,
-                                                          "NRMSE_avg": nrmse,
-                                                          "MSE": lambda y_true, y_pred: mean_squared_error(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          "MAE": lambda y_true, y_pred: mean_absolute_error(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          "NRMSE": lambda y_true, y_pred: nrmse(
-                                                              y_true, y_pred,
-                                                              multioutput="raw_values"),
-                                                          },
-                                                 verbose=1
-                                                )
-        del dict_metrics["predict_time"]
-        del dict_metrics2["predict_time"]
-        del dict_metrics["avg_pred_time_s"]
-        del dict_metrics2["avg_pred_time_s"]
-        if dict_metrics != dict_metrics2:
-            raise RuntimeError("This should be true")
-
-    # Now proceed with the evaluation
-    # I select only part of the data, for training
-    if env_name == "l2rpn_case14_sandbox":
-        env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is not None)
-        env.chronics_handler.real_data.reset()
-        obs = env.reset()
-    elif env_name == "l2rpn_neurips_2020_track2_small":
-        env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is not None)
-        env.chronics_handler.real_data.reset()
-        obs = env.reset()
-    else:
-        raise RuntimeError("Unsupported environment for now")
-
-    # evaluate a baseline
-    if do_dc:
-        print("#######################"
-              "## DC approximation  ##"
-              "#######################")
-        agent_evalN1 = RandomN1(env.action_space)
-        reproducible_exp(env,
-                         agent=agent_evalN1,
-                         env_seed=env_seed,
-                         agent_seed=agent_seed,
-                         chron_id=chron_id_val)
-        proxy_dc = ProxyBackend(env._init_grid_path,
-                                name=f"{model_name}_evalDC",
-                                is_dc=False)
-        agent_with_proxy_dc = AgentWithProxy(agent_evalN1,
-                                             proxy=proxy_dc,
-                                             logdir=None)
-        agent_with_proxy_dc.evaluate(env,
-                                     load_path=None,
-                                     save_path=save_path_final_results,
-                                     total_evaluation_step=total_evaluation_step,
-                                     metrics={"MSE_avg": mean_squared_error,
-                                              "MAE_avg": mean_absolute_error,
-                                              "NRMSE_avg": nrmse,
-                                              "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                               multioutput="raw_values"),
-                                              "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                                multioutput="raw_values"),
-                                              "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                    multioutput="raw_values"),
-                                              },
-                                     verbose=1
-                                     )
-
-    # evaluate this proxy on a similar dataset
-    if do_N1:
-        print("#######################"
-              "##     Test set      ##"
-              "#######################")
-        agent_evalN1 = RandomN1(env.action_space)
-        max_ = np.max(li_sizes)
-        for pred_batch_size in li_sizes:
-            reproducible_exp(env,
-                             agent=agent_evalN1,
-                             env_seed=env_seed,
-                             agent_seed=agent_seed,
-                             chron_id=chron_id_val)
-            proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN1",
-                                      max_row_training_set=max(total_evaluation_step, pred_batch_size),
-                                      eval_batch_size=pred_batch_size,  # min(total_evaluation_step, 1024*64)
-                                      layer=layerfun)
-            agent_with_proxy_evalN1 = AgentWithProxy(agent_evalN1,
-                                                     proxy=proxy_eval,
-                                                     logdir=None)
-
-            dict_metrics = agent_with_proxy_evalN1.evaluate(env,
-                                             total_evaluation_step=pred_batch_size,
-                                             load_path=os.path.join(save_path, model_name),
-                                             save_path=save_path_final_results,
-                                             metrics={"MSE_avg": mean_squared_error,
-                                                      "MAE_avg": mean_absolute_error,
-                                                      "NRMSE_avg": nrmse,
-                                                      "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                                       multioutput="raw_values"),
-                                                      "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                                        multioutput="raw_values"),
-                                                      "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                            multioutput="raw_values"),
-                                                      },
-                                                            verbose=pred_batch_size == max_
-                                             )
-            total_pred_time_ms = 1000.*dict_metrics["predict_time"]
-            print(f'Time to compute {pred_batch_size} powerflow: {total_pred_time_ms:.2f}ms ({total_pred_time_ms/pred_batch_size:.4f} ms/powerflow)')
-            if pred_batch_size == max_:
-                print(proxy_eval._model.summary())
-            # import pdb
-            # pdb.set_trace()
-
-    # now evaluate this proxy on a different dataset (here we use another "actor" to sample the action and hence the state
-    if do_N2:
-        print("#######################"
-              "##   SuperTest set   ##"
-              "#######################")
-        agent_evalN2 = RandomN2(env.action_space)
-        reproducible_exp(env,
-                         agent=agent_evalN2,
-                         env_seed=env_seed,
-                         agent_seed=agent_seed,
-                         chron_id=chron_id_val)
-        proxy_eval = ProxyLeapNet(name=f"{model_name}_evalN2",
-                                  max_row_training_set=total_evaluation_step,
-                                  eval_batch_size=min(total_evaluation_step, 1024*64),
-                                  layer=layerfun
-                                  )
-        agent_with_proxy_evalN2 = AgentWithProxy(agent_evalN2,
-                                                 proxy=proxy_eval,
-                                                 logdir=None)
-        agent_with_proxy_evalN2.evaluate(env,
-                                         total_evaluation_step=total_evaluation_step,
-                                         load_path=os.path.join(save_path, model_name),
-                                         save_path=save_path_final_results,
-                                         metrics={"MSE_avg": mean_squared_error,
-                                                  "MAE_avg": mean_absolute_error,
-                                                  "NRMSE_avg": nrmse,
-                                                  "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred,
-                                                                                                   multioutput="raw_values"),
-                                                  "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred,
-                                                                                                    multioutput="raw_values"),
-                                                  "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred,
-                                                                                        multioutput="raw_values"),
-                                                  },
-                                         verbose=1
-                                         )

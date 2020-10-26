@@ -35,6 +35,7 @@ def main(limit_gpu_memory=True,
          use_lightsim_if_available=True,
          val_regex=".*99[0-9].*",
          actor_class=RandomNN1,
+         load_dataset=True, # do you load the entire training set in memory (can take a few minutes - set it to false if you simply want to make some tests)
          # perform an evaluation on the training set at the end of training
          eval_training_set=int(1024) * int(128),  # number of powerflow the proxy will do after training
          pred_batch_size=int(1024) * int(128),  # number of powerflow that will be done by the proxy "at once"
@@ -64,8 +65,9 @@ def main(limit_gpu_memory=True,
     env = create_env(env_name, use_lightsim_if_available=use_lightsim_if_available)
 
     # I select only part of the data, for training
-    env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
-    env.chronics_handler.real_data.reset()
+    if load_dataset:
+        env.chronics_handler.set_filter(lambda path: re.match(val_regex, path) is None)
+        env.chronics_handler.real_data.reset()
     obs = env.reset()
 
     # now train the agent
@@ -124,4 +126,4 @@ def main(limit_gpu_memory=True,
 
 
 if __name__ == "__main__":
-    main()
+    main(model_name="test_case_14", total_train=int(1024)*int(16), load_dataset=False, eval_training_set=None)
