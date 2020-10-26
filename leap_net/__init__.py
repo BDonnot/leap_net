@@ -10,7 +10,7 @@ from leap_net.Ltau import Ltau
 from leap_net.ResNetLayer import ResNetLayer
 
 __version__ = "0.0.2"
-__all__ = ["Ltau", "ResNetLayer"]
+__all__ = ["Ltau", "ResNetLayer", "LtauNoAdd"]
 
 try:
     from leap_net.generate_data import generate_dataset
@@ -20,6 +20,12 @@ except ImportError:
 
 try:
     from leap_net.kerasutils import MultipleDasetCallBacks
+    __all__ += ["MultipleDasetCallBacks"]
+except ImportError:
+    pass
+
+try:
+    from leap_net.proxy import xxx
     __all__ += ["MultipleDasetCallBacks"]
 except ImportError:
     pass

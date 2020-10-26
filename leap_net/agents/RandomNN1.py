@@ -34,15 +34,15 @@ class RandomNN1(BaseAgent):
         self.powerline_actions = 1 - 2*np.eye(action_space.n_line, dtype=dt_int)
 
     def act(self, obs, reward, done):
-        u = self.action_space.space_prng.uniform()
-        if u < self._1_p:
+        ur = self.space_prng.uniform()
+        if ur < self._1_p:
             arr_ = self.reset_all
         else:
-            id_ = self.action_space.space_prng.choice(self.action_space.n_line)
+            id_ = self.space_prng.choice(self.action_space.n_line)
             arr_ = self.powerline_actions[id_, :]
         li_bus = [(i, el) for i, el in enumerate(arr_)]
-        return self.action_space({"set_line_status": arr_,
-                                  "set_bus": {"lines_or_id": li_bus,
-                                              "lines_ex_id": li_bus},
-                                  }
-                                 )
+        act = self.action_space({"set_line_status": arr_,
+                                 "set_bus": {"lines_or_id": li_bus,
+                                             "lines_ex_id": li_bus},
+                                 })
+        return act

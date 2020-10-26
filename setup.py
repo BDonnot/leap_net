@@ -13,12 +13,15 @@ from setuptools import setup
 
 pkgs = {
     "required": [
-        "tensorflow"
+        "tensorflow",
+        "numpy",
+        "scipy"
     ],
     "extras": {
         "recommended": [
             "grid2op",
-            "pandas"
+            "pandas",
+            "tqdm"
         ]
     }
 }
@@ -33,6 +36,7 @@ setup(name='leap_net',
           'Development Status :: 4 - Beta',
           'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
+          'Programming Language :: Python :: 3.8',
           "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
           "Intended Audience :: Developers",
           "Intended Audience :: Education",

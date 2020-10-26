@@ -15,7 +15,7 @@ from grid2op.Agent import DoNothingAgent
 from grid2op.Parameters import Parameters
 from grid2op.dtypes import dt_float, dt_int
 from grid2op.Rules import AlwaysLegal
-from leap_net.generate_data.Agents import RandomNN1, RandomN1, RandomN2
+from leap_net.agents import RandomNN1, RandomN1, RandomN2
 
 
 def get_agent(env, agent_name, **kwargsagent):
