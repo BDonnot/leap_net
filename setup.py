@@ -21,7 +21,8 @@ pkgs = {
         "recommended": [
             "grid2op",
             "pandas",
-            "tqdm"
+            "tqdm",
+            'sklearn'
         ]
     }
 }

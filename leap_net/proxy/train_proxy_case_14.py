@@ -126,4 +126,4 @@ def main(limit_gpu_memory=True,
 
 
 if __name__ == "__main__":
-    main(model_name="test_case_14", total_train=int(1024)*int(16), load_dataset=False, eval_training_set=None)
+    main()
