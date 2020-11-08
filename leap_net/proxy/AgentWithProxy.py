@@ -31,6 +31,7 @@ except ImportError:
 
 class PlotErrorOnGrid:
     """
+    TODO move this class in this own file
     this class is used to "project" on the grid the metrics / errors of some proxies.
 
     it just ensure the projection, and as of creation (October, 26th 2020) it requires a development version

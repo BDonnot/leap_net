@@ -51,7 +51,7 @@ class BaseProxy(ABC):
 
     _time_predict: ``float``
         Time spent (measured in seconds) to make predictions with the proxy, only counting the evaluation time and
-        not the time spent in acquiring the data.
+        not the time spent in acquiring the data. It is measure in seconds (s).
 
     _time_train: ``float``
         Time spent (measured in seconds) to train the proxy, only counting the training time and not the time
