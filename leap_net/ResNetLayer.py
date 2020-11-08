@@ -31,7 +31,7 @@ class ResNetLayer(Layer):
                  use_bias=True,
                  trainable=True,
                  name=None,
-                 activation=None,
+                 activation="linear",
                  **kwargs):
         super(ResNetLayer, self).__init__(trainable=trainable, name=name, **kwargs)
         self.initializer = initializer
@@ -43,11 +43,11 @@ class ResNetLayer(Layer):
         self.d = None
 
     def build(self, input_shape):
-        nm_e = None
-        nm_d = None
+        nm_e = "e"
+        nm_d = "d"
         if self.name is not None:
             nm_e = '{}_e'.format(self.name)
-            nm_d = '{}_e'.format(self.name)
+            nm_d = '{}_d'.format(self.name)
 
         self.e = Dense(self.units,
                        kernel_initializer=self.initializer,
@@ -61,7 +61,7 @@ class ResNetLayer(Layer):
                        name=nm_d)
 
     def get_config(self):
-        config = super().get_config().copy()
+        config = super(ResNetLayer, self).get_config().copy()
         config.update({
             'initializer': str(self.initializer),
             'use_bias': bool(self.use_bias),

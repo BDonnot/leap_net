@@ -126,4 +126,5 @@ def main(limit_gpu_memory=True,
 
 
 if __name__ == "__main__":
+    from tensorflow.keras.layers import Dense
     main()
