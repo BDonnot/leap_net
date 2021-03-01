@@ -67,7 +67,7 @@ def create_env(env_name, use_lightsim_if_available=True):
             warnings.warn("You ask to use lightsim backend if it's available. But it's not available on your system.")
 
     if backend_cls is None:
-        from grid2op.PandaPowerBackend import PandaPowerBackend
+        from grid2op.Backend import PandaPowerBackend
         backend_cls = PandaPowerBackend
 
     param = get_parameters()
