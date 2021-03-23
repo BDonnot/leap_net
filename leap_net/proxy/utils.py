@@ -40,8 +40,9 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
 
 def limit_gpu_usage():
     physical_devices = tf.config.list_physical_devices('GPU')
-    if len(physical_devices):
-        tf.config.experimental.set_memory_growth(physical_devices[0], True)
+    # Currently, memory growth needs to be the same across GPUs
+    for device in physical_devices:
+        tf.config.experimental.set_memory_growth(device, True)
 
 
 def get_parameters():
