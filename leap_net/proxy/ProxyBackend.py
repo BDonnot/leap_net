@@ -97,7 +97,7 @@ class ProxyBackend(BaseProxy):
                                "Please set \"train_batch_size\" and \"eval_batch_size\" to 1.")
         res = self._bk_act_class()
         act = self._act_class()
-        act.update({"set_bus": self._my_x[self._indx_var["topo_vect"]][0, :],
+        act.update({"set_bus": self._my_x[self._indx_var["topo_vect"]][0, :].astype(int),
                     "injection": {
                         "prod_p": self._my_x[self._indx_var["prod_p"]][0, :],
                         "prod_v": self._my_x[self._indx_var["prod_v"]][0, :],
