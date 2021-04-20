@@ -7,12 +7,12 @@
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
 import warnings
-
-import tensorflow as tf
+import numpy as np
 
 from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_absolute_percentage_error
 from leap_net.metrics import nrmse
 from leap_net.metrics import pearson_r
+from leap_net.metrics import mape
 
 import grid2op
 from grid2op.Chronics import MultifolderWithCache
@@ -23,6 +23,8 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "MAE_avg": mean_absolute_error,
                    "NRMSE_avg": nrmse,
                    "pearson_r_avg": pearson_r,
+                   "mape_avg": mape,
+                   "rmse_avg": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true=y_true, y_pred=y_pred)),
                    "MSE": lambda y_true, y_pred: mean_squared_error(
                        y_true, y_pred,
                        multioutput="raw_values"),
@@ -35,10 +37,17 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "pearson_r": lambda y_true, y_pred: pearson_r(
                        y_true, y_pred,
                        multioutput="raw_values"),
+                   "mape": lambda y_true, y_pred: mape(
+                       y_true, y_pred,
+                       multioutput="raw_values"),
+                   "rmse": lambda y_true, y_pred: np.sqrt(
+                       mean_squared_error(y_true=y_true, y_pred=y_pred, multioutput="raw_values")),
                    }
 
 
 def limit_gpu_usage():
+    import tensorflow as tf  # lazy import because the module "utils" can be imported from lots of different module
+    # no need to import tensorflow each time
     physical_devices = tf.config.list_physical_devices('GPU')
     # Currently, memory growth needs to be the same across GPUs
     for device in physical_devices:

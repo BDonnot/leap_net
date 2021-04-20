@@ -73,7 +73,8 @@ def main(
         agent_with_proxy_dc.evaluate(env,
                                      load_path=None,
                                      save_path=save_path_final_results,
-                                     total_evaluation_step=int(total_evaluation_step / 128),  # I do less because the current implementation takes too long
+                                     # I do less because the current implementation takes too long
+                                     total_evaluation_step=int(total_evaluation_step / 128),
                                      metrics=metrics,
                                      verbose=verbose
                                      )

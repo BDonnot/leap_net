@@ -9,6 +9,7 @@
 from leap_net.proxy.BaseProxy import BaseProxy
 
 # this will be used to compute the DC approximation
+from grid2op.dtypes import dt_int
 from grid2op.Action._BackendAction import _BackendAction
 from grid2op.Action import CompleteAction
 from grid2op.Backend import PandaPowerBackend
@@ -84,6 +85,9 @@ class ProxyBackend(BaseProxy):
             raise RuntimeError("For now, a proxy based on a backend can only work with a database of 1 element ("
                                "the backend is applied sequentially to each element)")
         super().init(obss)
+        # convert back topology to integer, because, well, topology is integer and not "self.dtype"
+        arr_ = self._my_x[self._indx_var["topo_vect"]]
+        self._my_x[self._indx_var["topo_vect"]] = arr_.astype(dt_int)
 
     def _extract_data(self, indx_train):
         """
@@ -97,7 +101,7 @@ class ProxyBackend(BaseProxy):
                                "Please set \"train_batch_size\" and \"eval_batch_size\" to 1.")
         res = self._bk_act_class()
         act = self._act_class()
-        act.update({"set_bus": self._my_x[self._indx_var["topo_vect"]][0, :].astype(int),
+        act.update({"set_bus": self._my_x[self._indx_var["topo_vect"]][0, :],
                     "injection": {
                         "prod_p": self._my_x[self._indx_var["prod_p"]][0, :],
                         "prod_v": self._my_x[self._indx_var["prod_v"]][0, :],
