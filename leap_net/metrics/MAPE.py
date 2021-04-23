@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 import numpy as np
+import warnings
 
 
 def mape(y_true, y_pred, multioutput="uniform", threshold=1.):
@@ -51,9 +52,12 @@ def mape(y_true, y_pred, multioutput="uniform", threshold=1.):
     if threshold < 0.:
         raise RuntimeError("The threshold should be a positive floating point value.")
 
-    index_ok =( np.abs(y_true) > threshold)
-    rel_error_ = (y_pred[index_ok] - y_true[index_ok])/y_true[index_ok]
-    mape_ = np.mean(np.abs(rel_error_), axis=0)
+    index_ok = (np.abs(y_true) > threshold)
+    rel_error_ = np.full(y_true.shape, fill_value=np.NaN, dtype=float)
+    rel_error_[index_ok] = (y_pred[index_ok] - y_true[index_ok])/y_true[index_ok]
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        mape_ = np.nanmean(np.abs(rel_error_), axis=0)
     if multioutput == "uniform":
         mape_ = np.mean(mape_)
     return mape_

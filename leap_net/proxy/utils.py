@@ -25,21 +25,11 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "pearson_r_avg": pearson_r,
                    "mape_avg": mape,
                    "rmse_avg": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true=y_true, y_pred=y_pred)),
-                   "MSE": lambda y_true, y_pred: mean_squared_error(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "MAE": lambda y_true, y_pred: mean_absolute_error(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "NRMSE": lambda y_true, y_pred: nrmse(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "pearson_r": lambda y_true, y_pred: pearson_r(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
-                   "mape": lambda y_true, y_pred: mape(
-                       y_true, y_pred,
-                       multioutput="raw_values"),
+                   "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
+                   "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
+                   "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred, multioutput="raw_values"),
+                   "pearson_r": lambda y_true, y_pred: pearson_r(y_true, y_pred, multioutput="raw_values"),
+                   "mape": lambda y_true, y_pred: mape(y_true, y_pred, multioutput="raw_values"),
                    "rmse": lambda y_true, y_pred: np.sqrt(
                        mean_squared_error(y_true=y_true, y_pred=y_pred, multioutput="raw_values")),
                    }
@@ -55,7 +45,7 @@ def limit_gpu_usage():
 
 
 def get_parameters():
-    # generate the environment
+    # generate the environments parameters
     param = Parameters()
     param.NO_OVERFLOW_DISCONNECTION = True
     param.NB_TIMESTEP_COOLDOWN_LINE = 0
@@ -105,4 +95,3 @@ def reproducible_exp(env, agent, env_seed=None, chron_id_start=None, agent_seed=
 
     if agent_seed is not None:
         agent.seed(agent_seed)
-
