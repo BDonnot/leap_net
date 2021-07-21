@@ -19,7 +19,7 @@ import tensorflow as tf
 import tensorflow.keras.optimizers as tfko
 from tensorflow.keras.layers import Dense
 
-from leap_net.proxy.BaseProxy import BaseProxy
+from leap_net.proxy.baseProxy import BaseProxy
 
 
 class BaseNNProxy(BaseProxy):

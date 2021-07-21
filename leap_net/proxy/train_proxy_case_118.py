@@ -13,8 +13,8 @@ import tensorflow as tf
 
 from leap_net.ResNetLayer import ResNetLayer
 from leap_net.agents import RandomNN1
-from leap_net.proxy.AgentWithProxy import AgentWithProxy
-from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
+from leap_net.proxy.agentWithProxy import AgentWithProxy
+from leap_net.proxy.proxyLeapNet import ProxyLeapNet
 
 from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS, limit_gpu_usage
 # TODO resuse the "main" from train_case14 (only the selection of data change between the 2)

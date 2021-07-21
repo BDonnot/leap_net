@@ -14,15 +14,24 @@ import pdb
 
 class RandomNN1(BaseAgent):
     """
-    This "agent" will randomly disconnect 0 or 1 powerline with probability 1-p to disconnect 1 powerline
-    and with probability p to disconnect randomly one powerline.
+    This "agent" will randomly disconnect 0 or 1 powerline with probability p to disconnect 1 powerline
+    and with probability 1-p to reconnect everything.
     
     **NB** the output distribution is heavily biased: all the powerline are connected with proba `1-p`, but if you
     consider the odds of having powerline line `l` disconnected it's equal to `p / (nb_line)`.
+
+    Notes
+    -----
+    This agent will modify all the powerline at all steps. Make sure the `env.parameters.MAX_LINE_STATUS_CHANGED` is
+    big enough !
+
+    Also the `env.parameters.NB_TIMESTEP_COOLDOWN_LINE` need to be small enough ! Otherwise a powerline cannot be
+    acted upon at every step.
+
     """
     def __init__(self, action_space, p):
         super(RandomNN1, self).__init__(action_space)
-        if not "set_line_status" in action_space.subtype.authorized_keys:
+        if "set_line_status" not in action_space.subtype.authorized_keys:
             raise NotImplementedError("Impossible to have a RandomN1 agent if you cannot set the status or powerline")
         if p <= 0.:
             raise RuntimeError("Impossible to have p lower than 0.")
@@ -33,7 +42,7 @@ class RandomNN1(BaseAgent):
         # represent the action "exactly one powerline is disconnected
         self.powerline_actions = 1 - 2*np.eye(action_space.n_line, dtype=dt_int)
 
-    def act(self, obs, reward, done):
+    def act(self, obs, reward, done=False):
         ur = self.space_prng.uniform()
         if ur < self._1_p:
             arr_ = self.reset_all

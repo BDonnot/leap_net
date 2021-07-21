@@ -20,7 +20,7 @@ with warnings.catch_warnings():
     from tensorflow.keras.layers import Activation
     from tensorflow.keras.layers import Input
 
-from leap_net.proxy.BaseNNProxy import BaseNNProxy
+from leap_net.proxy.baseNNProxy import BaseNNProxy
 from leap_net.LtauNoAdd import LtauNoAdd
 
 
@@ -60,7 +60,8 @@ class ProxyLeapNet(BaseNNProxy):
                  scale_input_dec_layer=None,  # scale the input of the decoder
                  scale_input_enc_layer=None,  # scale the input of the encoder
                  layer=Dense,  # TODO (for save and restore)
-                 layer_act=None
+                 layer_act=None,
+                 topo_vect_to_tau="raw",  # see code for now  # TODO doc
                  ):
         BaseNNProxy.__init__(self,
                              name=name,
@@ -112,6 +113,19 @@ class ProxyLeapNet(BaseNNProxy):
                 self._where_id = "x"
             except ValueError:
                 warnings.warn("We strongly recommend you to get the \"line_status\" as an input vector")
+
+        # for handling the topo vect
+        self.topo_vect_to_tau = topo_vect_to_tau
+        self.nb_diff_topo_per_sub = None  # used for topo_vect_handler == "all"
+        self.nb_diff_topo = None  # used for topo_vect_handler == "all"
+        self.subs_index = None  # used for topo_vect_handler == "all"
+        self.power_of_two = None  # used for topo_vect_handler == "all"
+        if topo_vect_to_tau == "raw":
+            self.topo_vect_handler = self._raw_topo_vect
+        elif topo_vect_to_tau == "all":
+            self.topo_vect_handler = self._all_topo_encode
+        else:
+            raise RuntimeError(f"Unknown way to encode the topology vector in a tau vector (\"{topo_vect_handler}\")")
 
     def build_model(self):
         """build the neural network used as proxy, in this case a leap net."""
@@ -251,6 +265,20 @@ class ProxyLeapNet(BaseNNProxy):
 
         """
 
+        # init the handler for the topologie, if anything related to topology is done
+        # NB this should be done before any call to "self._extract_obs"
+        if self.topo_vect_to_tau == "all":
+            obs = obss[0]
+            self.nb_diff_topo_per_sub = (2 ** obs.sub_info) - 1
+            self.nb_diff_topo = np.sum(self.nb_diff_topo_per_sub)
+            self.subs_index = []
+            prev = 0
+            for sub_id in range(obs.n_sub):
+                nb_el = obs.sub_info[sub_id]
+                self.subs_index.append((prev, prev + nb_el))
+                prev += obs.sub_info[sub_id]
+            self.power_of_two = 2 ** np.arange(np.max(obs.sub_info))
+
         if not self._metadata_loaded:
             # ini the vector tau
             self._sz_tau = []
@@ -288,6 +316,29 @@ class ProxyLeapNet(BaseNNProxy):
                 self._sd_tau.append(self._get_sd(obss, attr_nm))
 
         self._metadata_loaded = True
+
+    def save_data(self, path, ext=".h5"):
+        if self.topo_vect_to_tau == "all":
+            import os
+            import json
+            np.save(file=os.path.join(path, "nb_diff_topo_per_sub.npy"),
+                    arr=self.nb_diff_topo_per_sub)
+            np.save(file=os.path.join(path, "nb_diff_topo.npy"),
+                    arr=self.nb_diff_topo)
+            np.save(file=os.path.join(path, "power_of_two.npy"),
+                    arr=self.power_of_two)
+            with open(os.path.join(path, "subs_index.json"), "w", encoding="utf-8") as f:
+                json.dump(obj=self.subs_index, fp=f)
+
+    def load_data(self, path, ext=".h5"):
+        if self.topo_vect_to_tau == "all":
+            import os
+            import json
+            self.nb_diff_topo_per_sub = np.load(file=os.path.join(path, "nb_diff_topo_per_sub.npy"))
+            self.nb_diff_topo = np.load(file=os.path.join(path, "nb_diff_topo.npy"))
+            self.power_of_two = np.load(file=os.path.join(path, "power_of_two.npy"))
+            with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
+                self.subs_index = json.load(fp=f)
 
     def get_metadata(self):
         res = super().get_metadata()
@@ -451,3 +502,137 @@ class ProxyLeapNet(BaseNNProxy):
         tmp = [el.numpy() for el in predicted_state]
         resy = [arr * sd_ + m_ for arr, m_, sd_ in zip(tmp, self._m_y, self._sd_y)]
         return resy
+
+    # customization of the "topo_vect" retrieval
+    def _extract_obs(self, obs, attr_nm):
+        if attr_nm == "topo_vect":
+            res = self.topo_vect_handler(obs)
+        else:
+            res = super()._extract_obs(obs, attr_nm)
+        return res
+
+    def _raw_topo_vect(self, obs):
+        return 1 * obs.topo_vect
+
+    def _all_topo_encode(self, obs):
+        """
+        This function encodes the topology vector "topo_vect" as followed:
+            - for all substation, it creates a one-hot encoded vector of size "the number of possible topology" for
+              this substation
+            - then it concatenates everything
+
+        The resulting tau vector counts then as many component as there are unary topological changes.
+
+        It will be all 0 if all elements of the grid are connected to bus 1)
+
+        It counts as many "1" as the number of substation not in their reference topology
+
+        It cannot have more than "env.n_sub" one at a time.
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+        the topology vector
+
+        Examples
+        --------
+
+        Once initialized, you have the following stuff:
+
+
+        ..code-block:: python
+
+            import grid2op
+            import numpy as np
+            from leap_net.proxy import ProxyLeapNet
+
+            proxy = ProxyLeapNet(attr_tau=("line_status",),
+                                 topo_vect_to_tau="all")
+
+            # valid only for this environment
+            env = grid2op.make("l2rpn_case14_sandbox")
+            # the number of elements per substations are:
+            [3, 6, 4, 6, 5, 7, 3, 2, 5, 3, 3, 3, 4, 3]
+            obs = env.reset()
+            proxy.init([obs])
+
+            # for the complete topology
+            obs = env.reset()
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 0
+
+            # the "first" topology: change the first element of the substation 0
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 1
+            assert tau[0] == 1.
+
+            # second topology: change the second element of substation 0.
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 1
+            assert tau[1] == 1.
+
+            # the last topology identified: everything on bus 2 for substation 13 (last one)
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 1
+            assert tau[389] == 1.
+
+            # as there are 3 elements on the substation 0, there are 7 (=2^3 - 1) different possible topologies
+            # for this one
+            # And this will be the "first topology of substation 1"
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 1
+            assert tau[7] == 1.
+
+            # change the substation 12
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 1
+            assert tau[382] == 1.
+
+            # if i change 2 substation, i have 2 "1" on the tau vector
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            tau = proxy.topo_vect_handler(obs)
+            assert np.sum(tau) == 2
+            assert tau[389] == 1.
+            assert tau[0] == 1.
+
+        """
+        res = np.zeros(self.nb_diff_topo)
+        # retrieve the topology
+        topo_vect = 1 * obs.topo_vect
+        # ignore (for now) the disconnected elements
+        topo_vect[topo_vect <= 0] = 1
+        # convert to 0 => on bus 1, 1 => on bus 2
+        topo_vect -= 1
+        # and now put the right number
+        prev = 0
+        for sub_id in range(obs.n_sub):
+            # TODO there might be a way to optimize that, but what for ?
+            beg_, end_ = self.subs_index[sub_id]
+            nb_el = obs.sub_info[sub_id]
+            index_one_this = np.sum(topo_vect[beg_:end_] * self.power_of_two[:nb_el]) - 1
+            if index_one_this >= 0:
+                res[prev + index_one_this] = 1
+            prev += 2 ** nb_el - 1
+        return res

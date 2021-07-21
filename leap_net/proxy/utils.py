@@ -64,7 +64,8 @@ def create_env(env_name, use_lightsim_if_available=True):
             from lightsim2grid.LightSimBackend import LightSimBackend
             backend_cls = LightSimBackend
         except ImportError as exc_:
-            warnings.warn("You ask to use lightsim backend if it's available. But it's not available on your system.")
+            warnings.warn(f"You ask to use lightsim backend if it's available. But it's not available on "
+                          f"your system (error \"{exc_}\").")
 
     if backend_cls is None:
         from grid2op.Backend import PandaPowerBackend

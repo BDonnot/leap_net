@@ -13,9 +13,9 @@ from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS
 
 from leap_net.ResNetLayer import ResNetLayer
 from leap_net.agents import RandomN1, RandomN2
-from leap_net.proxy.AgentWithProxy import AgentWithProxy
-from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
-from leap_net.proxy.ProxyBackend import ProxyBackend
+from leap_net.proxy.agentWithProxy import AgentWithProxy
+from leap_net.proxy.proxyLeapNet import ProxyLeapNet
+from leap_net.proxy.proxyBackend import ProxyBackend
 
 
 def main(

@@ -13,23 +13,32 @@ from grid2op.dtypes import dt_int, dt_float
 
 class RandomN2(BaseAgent):
     """
-    This "agent" will randomly disconnect exactly 1 powerline from the grid.
+    This "agent" will randomly disconnect exactly 2 different powerline from the grid.
 
     **NB** Every powerline that is not chosen at random to be disconnected will be reconnected by force.
 
     This agent will modify the status of all powerlines at every steps!
+
+    Notes
+    -----
+    This agent will modify all the powerline at all steps. Make sure the `env.parameters.MAX_LINE_STATUS_CHANGED` is
+    big enough !
+
+    Also the `env.parameters.NB_TIMESTEP_COOLDOWN_LINE` need to be small enough ! Otherwise a powerline cannot be
+    acted upon at every step.
+
     """
 
     def __init__(self, action_space):
         super(RandomN2, self).__init__(action_space)
-        if not "set_line_status" in action_space.subtype.authorized_keys:
+        if "set_line_status" not in action_space.subtype.authorized_keys:
             raise NotImplementedError("Impossible to have a RandomN1 agent if you cannot set the status or powerline")
 
         # represent the action "exactly one powerline is disconnected
         self.powerline_actions = np.ones(action_space.n_line, dtype=dt_int)
         self.tmp_arr = np.ones(action_space.n_line, dtype=dt_int)
 
-    def act(self, obs, reward, done):
+    def act(self, obs, reward, done=False):
         id_1 = self.space_prng.choice(self.action_space.n_line)
         id_2 = self.space_prng.choice(self.action_space.n_line - 1)
         if id_2 >= id_1:

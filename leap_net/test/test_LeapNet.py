@@ -23,7 +23,7 @@ import pdb
 
 class Test(unittest.TestCase):
     def setUp(self):
-        self.tol = 3e-6  # use to compare results that should be strictly equal, up to numerical error
+        self.tol = 1e-5  # use to compare results that should be strictly equal, up to numerical error
         self.tol_learn = 1e-2  # use to compare results from a test set
 
         # to have "reproducible" results

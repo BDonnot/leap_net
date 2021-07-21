@@ -13,8 +13,8 @@ import tensorflow as tf
 
 from leap_net.ResNetLayer import ResNetLayer
 from leap_net.agents import RandomNN1
-from leap_net.proxy.AgentWithProxy import AgentWithProxy
-from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
+from leap_net.proxy.agentWithProxy import AgentWithProxy
+from leap_net.proxy.proxyLeapNet import ProxyLeapNet
 
 from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS, limit_gpu_usage
 
@@ -56,6 +56,7 @@ def main(limit_gpu_memory=True,
          attr_x=("prod_p", "prod_v", "load_p", "load_q"),
          attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
          attr_tau=("line_status",),
+         topo_vect_to_tau="all",
          # TODO add the other constructor parameters of the proxy
          ):
     if limit_gpu_memory:
@@ -86,7 +87,8 @@ def main(limit_gpu_memory=True,
                          scale_input_enc_layer=scale_input_enc_layer,
                          attr_x=attr_x,
                          attr_tau=attr_tau,
-                         attr_y=attr_y)
+                         attr_y=attr_y,
+                         topo_vect_to_tau=topo_vect_to_tau)
     agent_with_proxy = AgentWithProxy(actor,
                                       proxy=proxy,
                                       logdir=save_path_tensorbaord,
