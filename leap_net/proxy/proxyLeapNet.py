@@ -62,6 +62,7 @@ class ProxyLeapNet(BaseNNProxy):
                  layer=Dense,  # TODO (for save and restore)
                  layer_act=None,
                  topo_vect_to_tau="raw",  # see code for now  # TODO doc
+                 kwargs_tau=None,  # optionnal kwargs depending on the method chosen for building tau from the observation
                  ):
         BaseNNProxy.__init__(self,
                              name=name,
@@ -117,15 +118,19 @@ class ProxyLeapNet(BaseNNProxy):
         # for handling the topo vect
         self.topo_vect_to_tau = topo_vect_to_tau
         self.nb_diff_topo_per_sub = None  # used for topo_vect_handler == "all"
-        self.nb_diff_topo = None  # used for topo_vect_handler == "all"
-        self.subs_index = None  # used for topo_vect_handler == "all"
+        self.nb_diff_topo = None  # used for topo_vect_handler == "all" and "given_list"
+        self.subs_index = None  # used for topo_vect_handler == "all" and "given_list"
         self.power_of_two = None  # used for topo_vect_handler == "all"
+        self.kwargs_tau = kwargs_tau  # used for topo_vect_handler == "given_list"
+        self.dict_topo = None
         if topo_vect_to_tau == "raw":
             self.topo_vect_handler = self._raw_topo_vect
         elif topo_vect_to_tau == "all":
             self.topo_vect_handler = self._all_topo_encode
+        elif topo_vect_to_tau == "given_list":
+            self.topo_vect_handler = self._given_list_topo_encode
         else:
-            raise RuntimeError(f"Unknown way to encode the topology vector in a tau vector (\"{topo_vect_handler}\")")
+            raise RuntimeError(f"Unknown way to encode the topology vector in a tau vector (\"{topo_vect_to_tau}\")")
 
     def build_model(self):
         """build the neural network used as proxy, in this case a leap net."""
@@ -252,6 +257,65 @@ class ProxyLeapNet(BaseNNProxy):
         # save the observation in the database
         super().store_obs(obs)
 
+    def _init_sub_index(self, obs):
+        self.subs_index = []
+        prev = 0
+        for sub_id in range(obs.n_sub):
+            nb_el = obs.sub_info[sub_id]
+            self.subs_index.append((prev, prev + nb_el))
+            prev += obs.sub_info[sub_id]
+
+    def _process_topo_list(self, obs, topo_list):
+        """
+        one of the utilitary function for self.topo_vect_to_tau == "given_list"
+
+        `topo_list` should have been given at initialization with `kwargs_tau`
+        """
+        if len(topo_list) == 0:
+            raise RuntimeError("No topology provided, please check the \"topo_list\" that you provided in the "
+                               "`kwarg_tau` argument")
+        res = {}
+        topo_id = 0
+        for component, (sub_id, sub_topo) in enumerate(topo_list):
+            if len(sub_topo) != obs.sub_info[sub_id]:
+                raise RuntimeError(f"The provided topology for substation {sub_id} counts {len(sub_topo)} values "
+                                   f"while there are {obs.sub_info[sub_id]} connected to it."
+                                   f"Please check the \"topo_list\" that you provided in the "
+                                   "`kwarg_tau` argument")
+            topo_array = np.array(sub_topo)
+            if np.all(topo_array == 2):
+                raise RuntimeError(f"If using this topology encoding, you must not provide topology with \"all "
+                                   f"\"connected to bus 2\" as it takes into account the symmetries. Check or remove "
+                                   f"the input of substation {sub_id}."
+                                   f"Please check the \"topo_list\" that you provided in the "
+                                   "`kwarg_tau` argument")
+
+            if np.any(topo_array <= 0):
+                raise RuntimeError(f"Topologies should be only represented as either 1 or 2. We found 0 or negative "
+                                   f"number for topology of susbtation {sub_id}"
+                                   f"Please check the \"topo_list\" that you provided in the "
+                                   "`kwarg_tau` argument"
+                                   )
+            if np.any(topo_array > 2):
+                raise RuntimeError(f"Topologies should be only represented as either 1 or 2. We found "
+                                   f"number > 3 in topology of susbtation {sub_id}"
+                                   f"Please check the \"topo_list\" that you provided in the "
+                                   "`kwarg_tau` argument"
+                                   )
+            topo_1 = (sub_id, tuple([int(el) for el in sub_topo]))
+            topo_2 = (sub_id, tuple([1 if el == 2 else 2 for el in sub_topo]))
+            if topo_1 in res:
+                warnings.warn(f"Topology {sub_topo} of substation {sub_id} ({component}th element of the provided) "
+                              f"vector is already encoded previously."
+                              f"Please check the \"topo_list\" that you provided in the "
+                              "`kwarg_tau` argument")
+            else:
+                res[topo_1] = topo_id
+                res[topo_2] = topo_id
+                topo_id += 1
+        nb_diff_topo = topo_id
+        return res, nb_diff_topo
+
     def init(self, obss):
         """
         Initialize all the meta data and the database for training
@@ -271,13 +335,12 @@ class ProxyLeapNet(BaseNNProxy):
             obs = obss[0]
             self.nb_diff_topo_per_sub = (2 ** obs.sub_info) - 1
             self.nb_diff_topo = np.sum(self.nb_diff_topo_per_sub)
-            self.subs_index = []
-            prev = 0
-            for sub_id in range(obs.n_sub):
-                nb_el = obs.sub_info[sub_id]
-                self.subs_index.append((prev, prev + nb_el))
-                prev += obs.sub_info[sub_id]
+            self._init_sub_index(obs)
             self.power_of_two = 2 ** np.arange(np.max(obs.sub_info))
+        elif self.topo_vect_to_tau == "given_list":
+            obs = obss[0]
+            self._init_sub_index(obs)
+            self.dict_topo, self.nb_diff_topo = self._process_topo_list(obs, self.kwargs_tau)
 
         if not self._metadata_loaded:
             # ini the vector tau
@@ -329,6 +392,8 @@ class ProxyLeapNet(BaseNNProxy):
                     arr=self.power_of_two)
             with open(os.path.join(path, "subs_index.json"), "w", encoding="utf-8") as f:
                 json.dump(obj=self.subs_index, fp=f)
+        elif self.topo_vect_to_tau == "given_list":
+            raise NotImplementedError()  # TODO
 
     def load_data(self, path, ext=".h5"):
         if self.topo_vect_to_tau == "all":
@@ -339,6 +404,8 @@ class ProxyLeapNet(BaseNNProxy):
             self.power_of_two = np.load(file=os.path.join(path, "power_of_two.npy"))
             with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
                 self.subs_index = json.load(fp=f)
+        elif self.topo_vect_to_tau == "given_list":
+            raise NotImplementedError()  # TODO
 
     def get_metadata(self):
         res = super().get_metadata()
@@ -512,7 +579,97 @@ class ProxyLeapNet(BaseNNProxy):
         return res
 
     def _raw_topo_vect(self, obs):
-        return 1 * obs.topo_vect
+        """
+        This functions encode the topology vector in:
+
+        - 0 if the element is on bus 1 or disconnected
+        - 1 if the element is on bus 2
+
+        The resulting vector has the dimension "dim_topo"
+
+        Even if there are only one topological change at a substation, encoded this way the tau vector can have
+        multiple components set to 1.
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+
+        Examples
+        --------
+
+        Once initialized, you have the following stuff:
+
+
+        ..code-block:: python
+
+            import grid2op
+            import numpy as np
+            from leap_net.proxy import ProxyLeapNet
+
+            proxy = ProxyLeapNet(attr_tau=("line_status",),
+                                 topo_vect_to_tau="raw")
+            obs = env.reset()
+            proxy.init([obs])
+
+            # valid only for this environment
+            env = grid2op.make("l2rpn_case14_sandbox")
+            # the number of elements per substations are:
+            # [3, 6, 4, 6, 5, 7, 3, 2, 5, 3, 3, 3, 4, 3]
+            obs = env.reset()
+            proxy.init([obs])
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[0] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[1] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[3] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 4
+            assert np.all(res[[50, 51, 52, 53]] == 1.)
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 3
+            assert np.all(res[[54, 55, 56]] == 1.)
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 4
+            assert res[0] == 1.
+            assert np.all(res[[54, 55, 56]] == 1.)
+
+        """
+        res = np.zeros(obs.dim_topo)
+        res[obs.topo_vect == 2] = 1
+        return res
 
     def _all_topo_encode(self, obs):
         """
@@ -551,6 +708,8 @@ class ProxyLeapNet(BaseNNProxy):
 
             proxy = ProxyLeapNet(attr_tau=("line_status",),
                                  topo_vect_to_tau="all")
+            obs = env.reset()
+            proxy.init([obs])
 
             # valid only for this environment
             env = grid2op.make("l2rpn_case14_sandbox")
@@ -628,11 +787,140 @@ class ProxyLeapNet(BaseNNProxy):
         # and now put the right number
         prev = 0
         for sub_id in range(obs.n_sub):
-            # TODO there might be a way to optimize that, but what for ?
+            # TODO there might be a way to optimize that, but maybe I need to check the time it takes first.
             beg_, end_ = self.subs_index[sub_id]
             nb_el = obs.sub_info[sub_id]
             index_one_this = np.sum(topo_vect[beg_:end_] * self.power_of_two[:nb_el]) - 1
             if index_one_this >= 0:
                 res[prev + index_one_this] = 1
             prev += 2 ** nb_el - 1
+        return res
+
+    def _given_list_topo_encode(self, obs):
+        """
+        This methods require a pre selected set of substation topology that you can have (that should give at the
+        initialization in the keyword argument `kwarg_tau`).
+
+        It will then assign a component of a tau vector for each topology.
+
+        It acts basically as a subset of the :func:`ProxyLeapNet._all_topo_encode` but considering not all
+        topologies but only a subset of the possible ones.
+
+        Topologies (remember, given in `kwarg_tau`) are represented by a tuple with 2 elements:
+        - substation id
+        - topology of this substation given by a vector counting as many components of the elements connected to this
+          substation
+
+        The complete list of topologies should be given as list / numpy array or any other iterators over the
+        topology tuples.
+
+        The "all connected to bus 1" topology will be encoded by 0, as always.
+
+        The resulting "tau" vector will count as many component as the length of different unary topologies.
+
+        **NB** in the description of the topologies, we expect vectors with only 1 and 2 (no 0, no -1 etc.)
+
+        **NB** if an object is disconnected, this method will behave as if it is connected to bus 1.
+
+        **NB** if the topology seen in the observation is not found in the list of possible unary change,
+        it raises a warning and returns the "tau_ref" vector. It will NOT raise an error in this case
+
+        **NB** as opposed to other methods (:func:`ProxyLeapNet._all_topo_encode` or
+        :func:`ProxyLeapNet._raw_topo_vect`), it also search if the inverse of the topology
+        (so swapping buses 1<->2 is in the provided list -- the constraint that disconnected object are
+        on bus 1 still applies! )
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+        the topology vector
+
+        Examples
+        --------
+
+        Once initialized, you have the following stuff:
+
+
+        ..code-block:: python
+
+            import grid2op
+            import numpy as np
+            from leap_net.proxy import ProxyLeapNet
+
+            proxy = ProxyLeapNet(attr_tau=("line_status",),
+                                 topo_vect_to_tau="given_list",
+                                 kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
+                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                                 )
+            obs = env.reset()
+            proxy.init([obs])
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[0] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[1] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[2] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 0
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 0
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 1, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 2
+            assert res[0] == 1.
+            assert res[4] == 1.
+
+        """
+        res = np.zeros(self.nb_diff_topo)
+        # retrieve the topology
+        topo_vect = 1 * obs.topo_vect
+
+        # and now put the right number
+        for sub_id in range(obs.n_sub):
+            # TODO there might be a way to optimize that, but what for ?
+            beg_, end_ = self.subs_index[sub_id]
+            this_sub_topo = topo_vect[beg_:end_]
+            disco = this_sub_topo == -1
+            conn = ~disco
+            if np.all(this_sub_topo[conn] == 2) or np.all(this_sub_topo[conn] == 1):
+                # complete topology, so i don't do anything
+                continue
+
+            # so i have a different topology that the reference one
+            lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+            if lookup in self.dict_topo:
+                res[self.dict_topo[lookup]] = 1.
+            else:
+                warnings.warn(f"Topology {lookup} is not found on the topo dictionary")
         return res

@@ -35,6 +35,63 @@ class Test(unittest.TestCase):
         self.obs = self.env.reset()
         self.proxy.init([self.obs])
 
+    def test_tau_default(self):
+        proxy = ProxyLeapNet(attr_tau=("line_status",),
+                             topo_vect_to_tau="raw")
+        proxy.init([self.obs])
+
+        # valid only for this environment
+        env = self.env
+        # the number of elements per substations are:
+        # [3, 6, 4, 6, 5, 7, 3, 2, 5, 3, 3, 3, 4, 3]
+        obs = env.reset()
+        proxy.init([obs])
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[0] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[1] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[3] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 4
+        assert np.all(res[[50, 51, 52, 53]] == 1.)
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 3
+        assert np.all(res[[54, 55, 56]] == 1.)
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 4
+        assert res[0] == 1.
+        assert np.all(res[[54, 55, 56]] == 1.)
+
     def test_tau_from_topo_vect_all(self):
         # for the complete topology
         obs = self.env.reset()
@@ -93,3 +150,69 @@ class Test(unittest.TestCase):
         assert np.sum(tau) == 2
         assert tau[389] == 1.
         assert tau[0] == 1.
+
+    def test_tau_from_list_topo(self):
+        proxy = ProxyLeapNet(attr_tau=("line_status",),
+                             topo_vect_to_tau="given_list",
+                             kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
+                                         (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                             )
+        proxy.init([self.obs])
+
+        env = self.env
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[0] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[1] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[2] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 0
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 0
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        act = env.action_space({"set_bus": {"substations_id": [(13, (2, 1, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 2
+        assert res[0] == 1.
+        assert res[4] == 1.
+
+        # test the symmetry
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(0, (2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 0
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (1, 2, 2, 2, 2, 2))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[2] == 1.
