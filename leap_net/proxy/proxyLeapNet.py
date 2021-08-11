@@ -121,7 +121,9 @@ class ProxyLeapNet(BaseNNProxy):
         self.nb_diff_topo = None  # used for topo_vect_handler == "all" and "given_list"
         self.subs_index = None  # used for topo_vect_handler == "all" and "given_list"
         self.power_of_two = None  # used for topo_vect_handler == "all"
-        self.kwargs_tau = kwargs_tau  # used for topo_vect_handler == "given_list"
+        self.kwargs_tau = kwargs_tau  # used for topo_vect_handler == "given_list" and "online_list"
+        self._nb_max_topo = None  # used for topo_vect_handler "online_list"
+        self._current_used_topo_max_id = None  # used for topo_vect_handler "online_list"
         self.dict_topo = None
         if topo_vect_to_tau == "raw":
             self.topo_vect_handler = self._raw_topo_vect
@@ -129,6 +131,8 @@ class ProxyLeapNet(BaseNNProxy):
             self.topo_vect_handler = self._all_topo_encode
         elif topo_vect_to_tau == "given_list":
             self.topo_vect_handler = self._given_list_topo_encode
+        elif topo_vect_to_tau == "online_list":
+            self.topo_vect_handler = self._online_list_topo_encode
         else:
             raise RuntimeError(f"Unknown way to encode the topology vector in a tau vector (\"{topo_vect_to_tau}\")")
 
@@ -303,7 +307,7 @@ class ProxyLeapNet(BaseNNProxy):
                                    "`kwarg_tau` argument"
                                    )
             topo_1 = (sub_id, tuple([int(el) for el in sub_topo]))
-            topo_2 = (sub_id, tuple([1 if el == 2 else 2 for el in sub_topo]))
+            topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in sub_topo]))
             if topo_1 in res:
                 warnings.warn(f"Topology {sub_topo} of substation {sub_id} ({component}th element of the provided) "
                               f"vector is already encoded previously."
@@ -341,6 +345,25 @@ class ProxyLeapNet(BaseNNProxy):
             obs = obss[0]
             self._init_sub_index(obs)
             self.dict_topo, self.nb_diff_topo = self._process_topo_list(obs, self.kwargs_tau)
+        elif self.topo_vect_to_tau == "online_list":
+            obs = obss[0]
+            self._init_sub_index(obs)
+            if self.kwargs_tau is None:
+                raise RuntimeError("Impossible to use the topo_vect_to_tau=\"online_list\" tau encoding without "
+                                   "providing a "
+                                   "kwargs_tau that should be a > 0 integer.")
+            try:
+                nb_max_topo = int(self.kwargs_tau)
+            except ValueError as exc_:
+                raise RuntimeError(f"When using topo_vect_to_tau=\"online_list\" encoding"
+                                   f"the \"kwargs_tau\" should be a > 0 integer we found {self.kwargs_tau}") from exc_
+            if nb_max_topo <= 0:
+                raise RuntimeError(f"When using topo_vect_to_tau=\"online_list\" encoding"
+                                   f"the \"kwargs_tau\" should be a > 0 integer it is currently {nb_max_topo}")
+
+            self._nb_max_topo = nb_max_topo
+            self.dict_topo = {}
+            self._current_used_topo_max_id = 0
 
         if not self._metadata_loaded:
             # ini the vector tau
@@ -380,32 +403,106 @@ class ProxyLeapNet(BaseNNProxy):
 
         self._metadata_loaded = True
 
+    def _save_dict_topo(self, path):
+        """utility functions to save self.dict_topo as json, because json default dump function
+        does not like dictionnary keys that are tuple...
+
+        what we would like to do but cannot:
+
+        .. code-block:: python
+
+            with open(os.path.join(path, "dict_topo.json"), "w", encoding="utf-8") as f:
+                json.dump(obj=self.dict_topo, fp=f)
+        """
+
+        import os
+        import json
+        dict_serialized = {}
+        for (sub_id, topo_descr), topo_id in self.dict_topo.items():
+            rest_ = ','.join([str(el) for el in topo_descr])
+            new_key = f"{sub_id}@{rest_}"
+            dict_serialized[new_key] = topo_id
+
+        with open(os.path.join(path, "dict_topo.json"), "w", encoding="utf-8") as f:
+            json.dump(obj=dict_serialized, fp=f)
+
+    def _load_dict_topo(self, path):
+        """to load back the topo data...
+
+        what we would like to do but cannot:
+
+        .. code-block:: python
+
+            with open(os.path.join(path, "dict_topo.json"), "r", encoding="utf-8") as f:
+                self.dict_topo = json.load(fp=f)
+
+        """
+        import os
+        import json
+
+        with open(os.path.join(path, "dict_topo.json"), "r", encoding="utf-8") as f:
+            dict_serialized = json.load(fp=f)
+
+        self.dict_topo = {}
+        for encoded_key, topo_id in dict_serialized.items():
+            sub_id, rest_ = encoded_key.split("@")
+            topo_descr = tuple([int(el) for el in rest_.split(",")])
+            decoded_key = (int(sub_id), topo_descr)
+            self.dict_topo[decoded_key] = topo_id
+
+    def _save_subs_index(self, path):
+        """utility to save self.subs_index because json does not like "int64"...
+        Nothing to do at loading time as python is perfectly fine with regular int
+        """
+        import os
+        import json
+        with open(os.path.join(path, "subs_index.json"), "w", encoding="utf-8") as f:
+            json.dump(obj=[(int(el), int(ell)) for el, ell in self.subs_index], fp=f)
+
     def save_data(self, path, ext=".h5"):
+        import os
         if self.topo_vect_to_tau == "all":
-            import os
-            import json
             np.save(file=os.path.join(path, "nb_diff_topo_per_sub.npy"),
                     arr=self.nb_diff_topo_per_sub)
             np.save(file=os.path.join(path, "nb_diff_topo.npy"),
                     arr=self.nb_diff_topo)
             np.save(file=os.path.join(path, "power_of_two.npy"),
                     arr=self.power_of_two)
-            with open(os.path.join(path, "subs_index.json"), "w", encoding="utf-8") as f:
-                json.dump(obj=self.subs_index, fp=f)
+            self._save_subs_index(path)
         elif self.topo_vect_to_tau == "given_list":
-            raise NotImplementedError()  # TODO
+            np.save(file=os.path.join(path, "nb_diff_topo.npy"),
+                    arr=self.nb_diff_topo)
+            self._save_dict_topo(path)
+            self._save_subs_index(path)
+        elif self.topo_vect_to_tau == "online_list":
+            np.save(file=os.path.join(path, "_nb_max_topo.npy"),
+                    arr=self._nb_max_topo)
+            np.save(file=os.path.join(path, "_current_used_topo_max_id.npy"),
+                    arr=self._current_used_topo_max_id)
+            self._save_dict_topo(path)
+            self._save_subs_index(path)
 
     def load_data(self, path, ext=".h5"):
+        import os
+        import json
+        # TODO factorize the different stuff used for different encoding
         if self.topo_vect_to_tau == "all":
-            import os
-            import json
             self.nb_diff_topo_per_sub = np.load(file=os.path.join(path, "nb_diff_topo_per_sub.npy"))
             self.nb_diff_topo = np.load(file=os.path.join(path, "nb_diff_topo.npy"))
             self.power_of_two = np.load(file=os.path.join(path, "power_of_two.npy"))
             with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
                 self.subs_index = json.load(fp=f)
         elif self.topo_vect_to_tau == "given_list":
-            raise NotImplementedError()  # TODO
+            with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
+                self.subs_index = json.load(fp=f)
+            self._load_dict_topo(path)
+            self.nb_diff_topo = np.load(file=os.path.join(path, "nb_diff_topo.npy"))
+        elif self.topo_vect_to_tau == "online_list":
+            with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
+                self.subs_index = json.load(fp=f)
+            self._load_dict_topo(path)
+            self._nb_max_topo = int(np.load(file=os.path.join(path, "_nb_max_topo.npy")))
+            self._current_used_topo_max_id = int(np.load(file=os.path.join(path, "_current_used_topo_max_id.npy")))
 
     def get_metadata(self):
         res = super().get_metadata()
@@ -600,7 +697,7 @@ class ProxyLeapNet(BaseNNProxy):
         Examples
         --------
 
-        Once initialized, you have the following stuff:
+        Once initialized, you have the following steps:
 
 
         ..code-block:: python
@@ -609,7 +706,7 @@ class ProxyLeapNet(BaseNNProxy):
             import numpy as np
             from leap_net.proxy import ProxyLeapNet
 
-            proxy = ProxyLeapNet(attr_tau=("line_status",),
+            proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="raw")
             obs = env.reset()
             proxy.init([obs])
@@ -697,7 +794,7 @@ class ProxyLeapNet(BaseNNProxy):
         Examples
         --------
 
-        Once initialized, you have the following stuff:
+        Once initialized, you have the following steps:
 
 
         ..code-block:: python
@@ -706,7 +803,7 @@ class ProxyLeapNet(BaseNNProxy):
             import numpy as np
             from leap_net.proxy import ProxyLeapNet
 
-            proxy = ProxyLeapNet(attr_tau=("line_status",),
+            proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="all")
             obs = env.reset()
             proxy.init([obs])
@@ -801,7 +898,7 @@ class ProxyLeapNet(BaseNNProxy):
         This methods require a pre selected set of substation topology that you can have (that should give at the
         initialization in the keyword argument `kwarg_tau`).
 
-        It will then assign a component of a tau vector for each topology.
+        It will then assign a component of a tau vector for each "substation topology".
 
         It acts basically as a subset of the :func:`ProxyLeapNet._all_topo_encode` but considering not all
         topologies but only a subset of the possible ones.
@@ -841,8 +938,7 @@ class ProxyLeapNet(BaseNNProxy):
         Examples
         --------
 
-        Once initialized, you have the following stuff:
-
+        Once initialized, you have the following steps:
 
         ..code-block:: python
 
@@ -850,7 +946,7 @@ class ProxyLeapNet(BaseNNProxy):
             import numpy as np
             from leap_net.proxy import ProxyLeapNet
 
-            proxy = ProxyLeapNet(attr_tau=("line_status",),
+            proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
                                  kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
                                              (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
@@ -914,7 +1010,7 @@ class ProxyLeapNet(BaseNNProxy):
             disco = this_sub_topo == -1
             conn = ~disco
             if np.all(this_sub_topo[conn] == 2) or np.all(this_sub_topo[conn] == 1):
-                # complete topology, so i don't do anything
+                # complete / reference topology, so i don't do anything
                 continue
 
             # so i have a different topology that the reference one
@@ -923,4 +1019,166 @@ class ProxyLeapNet(BaseNNProxy):
                 res[self.dict_topo[lookup]] = 1.
             else:
                 warnings.warn(f"Topology {lookup} is not found on the topo dictionary")
+        return res
+
+    def _online_list_topo_encode(self, obs):
+        """
+        This method behaves exaclyt like :func:`ProxyLeapNet._given_list_topo_encode` with one difference: you do not
+        need to provide any list of topologies at the initialization. But rather when a new topology for a substation
+        will be encounter it will be added to a new component of tau.
+
+        It can store up to `kwargs_tau` different topologies. Afterwards, each new topologies will be assigned to
+        the reference topologies (everything connected to bus 1)
+
+        It assigns a component of a tau vector for each known "substation topology".
+
+        It acts basically as a subset of the :func:`ProxyLeapNet._all_topo_encode` but considering not all
+        topologies but only a subset of the possible ones encountered up until a certain point.
+
+        The "all connected to bus 1" topology will be encoded by 0, as always.
+
+        The resulting "tau" vector will count as many component as `kwargs_tau` (which should be an integer) as
+        argument.
+
+        **NB** if an object is disconnected, this method will behave as if it is connected to bus 1.
+
+        **NB** as opposed to other methods (:func:`ProxyLeapNet._all_topo_encode` or
+        :func:`ProxyLeapNet._raw_topo_vect`) but like its "big sister" :func:`ProxyLeapNet._given_list_topo_encode`
+        it also search if the inverse of the topology
+
+        Parameters
+        ----------
+        obs
+
+        Returns
+        -------
+        the topology vector
+
+        Examples
+        --------
+
+        Once initialized, you have the following steps:
+
+
+        ..code-block:: python
+
+            import grid2op
+            import numpy as np
+            from leap_net.proxy import ProxyLeapNet
+
+            proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
+                                 topo_vect_to_tau="online_list",
+                                 kwargs_tau=7  # as an example, any > 0 integer works
+                                 )
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[0] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (1, 2, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[1] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[2] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 0
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 0
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            act = env.action_space({"set_bus": {"substations_id": [(13, (2, 1, 2))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 2
+            assert res[0] == 1.
+            assert res[3] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 2, 1, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[4] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 2, 2, 1, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[5] == 1.
+
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 2, 1, 2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 1
+            assert res[6] == 1.
+
+            # "overflow" in the number of topologies => like ref topology
+            obs = env.reset()
+            act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 1, 2, 1, 1))]}})
+            obs, reward, done, info = env.step(act)
+            res = proxy.topo_vect_handler(obs)
+            assert np.sum(res) == 0
+
+        """
+        res = np.zeros(self._nb_max_topo)
+        # retrieve the topology
+        topo_vect = 1 * obs.topo_vect
+
+        # and now put the right number
+        prev = 0
+        for sub_id in range(obs.n_sub):
+            # TODO there might be a way to optimize that, but what for ?
+            beg_, end_ = self.subs_index[sub_id]
+            nb_el = obs.sub_info[sub_id]
+            this_sub_topo = topo_vect[beg_:end_]
+            disco = this_sub_topo == -1
+            conn = ~disco
+            if np.all(this_sub_topo[conn] == 2) or np.all(this_sub_topo[conn] == 1):
+                # complete / reference topology, so i don't do anything
+                continue
+            # so i have a different topology that the reference one
+            lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+            if lookup not in self.dict_topo:
+                if self._current_used_topo_max_id >= self._nb_max_topo:
+                    # we can't add another topology...
+                    warnings.warn(f"Already too much topologies encoded. Please consider increasing \"kwargs_tau\""
+                                  f"which is currently {self._nb_max_topo} and try again. You can save the values "
+                                  f"of the relevant layers in numpy arrays, create another proxy with larger tau, "
+                                  f"encode all the taus in the same order as this one, and assign the value of the "
+                                  f"\"new\" layer to be the old values and try again to learn. This is for now painful"
+                                  f"but looks doable.")
+                    sub_topo_id_ = None
+                else:
+                    topo_1 = lookup
+                    topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in this_sub_topo]))
+                    self.dict_topo[topo_1] = self._current_used_topo_max_id
+                    self.dict_topo[topo_2] = self._current_used_topo_max_id
+                    sub_topo_id_ = self._current_used_topo_max_id
+                    self._current_used_topo_max_id += 1
+            else:
+                sub_topo_id_ = self.dict_topo[lookup]
+            if sub_topo_id_ is not None:
+                res[sub_topo_id_] = 1.
         return res
