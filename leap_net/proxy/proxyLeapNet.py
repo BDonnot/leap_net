@@ -43,6 +43,36 @@ class ProxyLeapNet(BaseNNProxy):
     So this class also demonstrates how the generic interface can be adapted in case you want to deal with different
     data scheme (in this case 2 inputs and 1 outputs)
 
+    Notes
+    -----
+    Leap Net has been particularly studied in the context of powerline connection / disconnection, this is why
+    we encourage you to add the "line_status" as an `attr_tau` attribute in the constructor of this kind of proxy.
+
+    In the later stage, the leap net was extended to be able to process topological changes too. In this case, there are
+    multiple ways to compute the `tau` vector from the topology of the grid. Some of these different methods
+    have been coded in this proxy and are controlled by the `topo_vect_to_tau` argument:
+
+    1) `topo_vect_to_tau="raw"`: the most straightforward encoding. It transforms the `obs.topo_vect` directly
+       into a `tau` vector of the same dimension with the convention: if obs.topo_vect[i] == 2 for a given `i` then
+       `tau[i] = 1` else `tau[i] = 0`. More details are given in the :func:`ProxyLeapNet._raw_topo_vect`, with usage
+       examples on how to create it.
+    2) `topo_vect_to_tau="all"`: it encodes the global topology of the grid by a one hot encoding of the
+       "local topology" of each substation. It first computes all the possible "local topologies" for
+        all the substations of the grid and then assign a number (unique ID) for each of them. The resulting `tau`
+        vector is then the concatenation of the "one hot encoded" ID of the current "local topology" of each substation.
+        More information is given in :func:`ProxyLeapNet._all_topo_encode` with usage examples on how to create it.
+    3) `topo_vect_to_tau="given_list"`: it encodes the topology into a `tau` vector following the same convention
+       as method 2) (`topo_vect_to_tau="all"`) with the difference that it only considers a given list of possible
+       topologies instead of all the topologies of all the substation of the grid. This list should be provided
+       as an input in the `kwargs_tau` argument. If a topology not given is encounter, it is mapped to the
+       reference topology.
+    4) `topo_vect_to_tau="online_list"`: it encodes the topology into a `tau` vector following the same convention as
+       method 2) (`topo_vect_to_tau="all"`) and 3) (`topo_vect_to_tau="given_list"`) but does not require to specify
+       any list of topologies. Instead, each time a new "local topology" is encountered during training,
+       it will be assigned to a new ID. When encountered again, this new ID will be re used. It can store a maximum
+       of different topologies given as `kwargs_tau` argument. If too much topologies have been encountered, the
+       new ones will be encoded as the reference topology.
+
     """
     def __init__(self,
                  name="leap_net",
@@ -61,7 +91,7 @@ class ProxyLeapNet(BaseNNProxy):
                  scale_input_enc_layer=None,  # scale the input of the encoder
                  layer=Dense,  # TODO (for save and restore)
                  layer_act=None,
-                 topo_vect_to_tau="raw",  # see code for now  # TODO doc
+                 topo_vect_to_tau="raw",  # see code for now
                  kwargs_tau=None,  # optionnal kwargs depending on the method chosen for building tau from the observation
                  ):
         BaseNNProxy.__init__(self,
@@ -481,6 +511,7 @@ class ProxyLeapNet(BaseNNProxy):
                     arr=self._current_used_topo_max_id)
             self._save_dict_topo(path)
             self._save_subs_index(path)
+        super().save_data(path, ext)
 
     def load_data(self, path, ext=".h5"):
         import os
@@ -503,6 +534,7 @@ class ProxyLeapNet(BaseNNProxy):
             self._load_dict_topo(path)
             self._nb_max_topo = int(np.load(file=os.path.join(path, "_nb_max_topo.npy")))
             self._current_used_topo_max_id = int(np.load(file=os.path.join(path, "_current_used_topo_max_id.npy")))
+        super().load_data(path, ext)
 
     def get_metadata(self):
         res = super().get_metadata()
