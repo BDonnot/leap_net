@@ -491,6 +491,7 @@ class ProxyLeapNet(BaseNNProxy):
 
     def save_data(self, path, ext=".h5"):
         import os
+        # TODO do i put it in the metadata or here is enough ?
         if self.topo_vect_to_tau == "all":
             np.save(file=os.path.join(path, "nb_diff_topo_per_sub.npy"),
                     arr=self.nb_diff_topo_per_sub)
@@ -511,12 +512,13 @@ class ProxyLeapNet(BaseNNProxy):
                     arr=self._current_used_topo_max_id)
             self._save_dict_topo(path)
             self._save_subs_index(path)
+        # don't forget to save the weights of the NN
         super().save_data(path, ext)
 
     def load_data(self, path, ext=".h5"):
         import os
         import json
-        # TODO factorize the different stuff used for different encoding
+        # TODO do i put it in the metadata or here is enough ?
         if self.topo_vect_to_tau == "all":
             self.nb_diff_topo_per_sub = np.load(file=os.path.join(path, "nb_diff_topo_per_sub.npy"))
             self.nb_diff_topo = np.load(file=os.path.join(path, "nb_diff_topo.npy"))
@@ -534,6 +536,7 @@ class ProxyLeapNet(BaseNNProxy):
             self._load_dict_topo(path)
             self._nb_max_topo = int(np.load(file=os.path.join(path, "_nb_max_topo.npy")))
             self._current_used_topo_max_id = int(np.load(file=os.path.join(path, "_current_used_topo_max_id.npy")))
+        # don't forget to load the weights of the NN
         super().load_data(path, ext)
 
     def get_metadata(self):
