@@ -6,8 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-import subprocess
-import sys
 import setuptools
 from setuptools import setup
 
@@ -28,7 +26,7 @@ pkgs = {
 }
 
 setup(name='leap_net',
-      version='0.0.2',
+      version='0.0.3',
       description='An environment that allows to perform powergrid optimization.',
       long_description='Built with modularity in mind, this package allows to perform the same operations '
                        'independently of the software used to compute powerflow or method to generate grid '
@@ -38,6 +36,7 @@ setup(name='leap_net',
           'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
           'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
           "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
           "Intended Audience :: Developers",
           "Intended Audience :: Education",
