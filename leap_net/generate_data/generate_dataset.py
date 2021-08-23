@@ -15,7 +15,7 @@ from grid2op.Agent import DoNothingAgent, BaseAgent
 from grid2op.Parameters import Parameters
 from grid2op.dtypes import dt_float, dt_int
 from grid2op.Rules import AlwaysLegal
-from leap_net.agents import RandomNN1, RandomN1, RandomN2
+from leap_net.agents import RandomNN1, RandomN1, RandomN2, RandomRefSub1, RandomSub1, RandomSub2
 
 
 def get_agent(env, agent_name, **kwargsagent):
@@ -27,6 +27,12 @@ def get_agent(env, agent_name, **kwargsagent):
         res = RandomN1(env.action_space, **kwargsagent)
     elif agent_name == "random_n2":
         res = RandomN2(env.action_space, **kwargsagent)
+    elif agent_name == "random_ref_sub1":
+        res = RandomRefSub1(env.action_space, **kwargsagent)
+    elif agent_name == "random_sub1":
+        res = RandomSub1(env.action_space, **kwargsagent)
+    elif agent_name == "random_sub2":
+        res = RandomSub2(env.action_space, **kwargsagent)
     else:
         raise NotImplementedError()
     return res
@@ -42,16 +48,18 @@ def generate_dataset(name_env,
     # TODO seed for reproductible expriments
     # TODO remove thermal limits
     param = Parameters()
-    param.NO_OVERFLOW_DISCONNECTION = True
-    # i can act on all powerline / substation at once
-    param.MAX_LINE_STATUS_CHANGED = 999999
-    param.MAX_SUB_CHANGED = 999999
-    # i can act every step on every line / substation (no cooldown)
-    param.NB_TIMESTEP_COOLDOWN_LINE = 0
-    param.NB_TIMESTEP_COOLDOWN_SUB = 0
 
     if isinstance(name_env, str):
-        env = grid2op.make(dataset=name_env, param=param, gamerules_class=AlwaysLegal)
+        env_tmp = grid2op.make(dataset=name_env, gamerules_class=AlwaysLegal)
+        param = env_tmp.parameters
+        param.NO_OVERFLOW_DISCONNECTION = True
+        # i can act on all powerline / substation at once
+        param.MAX_LINE_STATUS_CHANGED = 999999
+        param.MAX_SUB_CHANGED = 999999
+        # i can act every step on every line / substation (no cooldown)
+        param.NB_TIMESTEP_COOLDOWN_LINE = 0
+        param.NB_TIMESTEP_COOLDOWN_SUB = 0
+        env = grid2op.make(dataset=name_env, gamerules_class=AlwaysLegal, param=param)
     else:
         raise NotImplementedError("Unknwown environment! Please provide an environment name.")
 
@@ -78,7 +86,7 @@ def generate_dataset(name_env,
     if expe_type == "powerline":
         tau = np.full((nb_rows, env.n_line), fill_value=np.NaN, dtype=dt_int)
     elif expe_type == "topo":
-        raise RuntimeError("THis is not coded at the moment.")
+        raise RuntimeError("This is not coded at the moment.")
         tau = np.full((nb_rows, env.dim_topo), fill_value=np.NaN, dtype=dt_int)
     else:
         raise NotImplementedError()
