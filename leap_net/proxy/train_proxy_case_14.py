@@ -20,7 +20,7 @@ from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS, 
 
 
 def main(limit_gpu_memory=True,
-         total_train=int(1024)*int(1024),  # number of observations that will be gathered
+         total_train=int(1024) * int(1024),  # number of observations that will be gathered
          env_name="l2rpn_case14_sandbox",
          # log during training
          save_path="model_saved",
@@ -35,15 +35,16 @@ def main(limit_gpu_memory=True,
          use_lightsim_if_available=True,
          val_regex=".*99[0-9].*",
          actor_class=RandomNN1,
-         load_dataset=True, # do you load the entire training set in memory (can take a few minutes - set it to false if you simply want to make some tests)
+         # do you load the entire training set in memory (can take a few minutes - set it to false if you simply want to make some tests)
+         load_dataset=True,
          # perform an evaluation on the training set at the end of training
          eval_training_set=int(1024) * int(128),  # number of powerflow the proxy will do after training
-         pred_batch_size=int(1024) * int(128),  # number of powerflow that will be done by the proxy "at once"
+         pred_batch_size=int(1024) * int(8),  # number of powerflow that will be done by the proxy "at once"
          save_path_final_results="model_results",  # where the information about the prediction will be stored
          metrics=DEFAULT_METRICS,  # which metrics are used to evaluate the performance of the model
          verbose=1,  # do I print the results of the model
          # proxy part (sizes are not really "parametrized" this is just "something that works approximately)
-         model_name="leapnet_case_14",
+         model_name="leapnet_case_14_3",
          sizes_enc=(20,),
          sizes_main=(150, 150),
          sizes_out=(40,),
@@ -57,8 +58,12 @@ def main(limit_gpu_memory=True,
          attr_y=("a_or", "a_ex", "p_or", "p_ex", "q_or", "q_ex", "prod_q", "load_v", "v_or", "v_ex"),
          attr_tau=("line_status",),
          topo_vect_to_tau="all",
+         mult_by_zero_lines_pred=True,
          # TODO add the other constructor parameters of the proxy
          ):
+    """This script trains a model specifically in the case of the actor being N-1 with probability 0.5 using a leap
+    net model.
+    """
     if limit_gpu_memory:
         limit_gpu_usage()
 
@@ -88,7 +93,8 @@ def main(limit_gpu_memory=True,
                          attr_x=attr_x,
                          attr_tau=attr_tau,
                          attr_y=attr_y,
-                         topo_vect_to_tau=topo_vect_to_tau)
+                         topo_vect_to_tau=topo_vect_to_tau,
+                         mult_by_zero_lines_pred=mult_by_zero_lines_pred)
     agent_with_proxy = AgentWithProxy(actor,
                                       proxy=proxy,
                                       logdir=save_path_tensorbaord,

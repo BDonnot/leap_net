@@ -162,3 +162,9 @@ TestEmbedObsTopoVect.ipynb
 model_saved/
 tf_logs/
 model_results/
+perf.data
+perf.data.old
+test_profile.py
+test_profile.py.lprof
+test_mapequantile.py
+

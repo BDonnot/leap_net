@@ -13,6 +13,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_abso
 from leap_net.metrics import nrmse
 from leap_net.metrics import pearson_r
 from leap_net.metrics import mape
+from leap_net.metrics import mape_quantile
 
 import grid2op
 from grid2op.Chronics import MultifolderWithCache
@@ -25,6 +26,7 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "pearson_r_avg": pearson_r,
                    "mape_avg": mape,
                    "rmse_avg": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true=y_true, y_pred=y_pred)),
+                   "mape_90_avg": mape_quantile,
                    "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
                    "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
                    "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred, multioutput="raw_values"),
@@ -32,6 +34,9 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "mape": lambda y_true, y_pred: mape(y_true, y_pred, multioutput="raw_values"),
                    "rmse": lambda y_true, y_pred: np.sqrt(
                        mean_squared_error(y_true=y_true, y_pred=y_pred, multioutput="raw_values")),
+                   "mape_90": lambda y_true, y_pred: mape_quantile(y_true=y_true,
+                                                                   y_pred=y_pred,
+                                                                   multioutput="raw_values"),
                    }
 
 

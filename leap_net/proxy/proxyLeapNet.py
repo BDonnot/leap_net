@@ -93,6 +93,7 @@ class ProxyLeapNet(BaseNNProxy):
                  layer_act=None,
                  topo_vect_to_tau="raw",  # see code for now
                  kwargs_tau=None,  # optionnal kwargs depending on the method chosen for building tau from the observation
+                 mult_by_zero_lines_pred=True
                  ):
         BaseNNProxy.__init__(self,
                              name=name,
@@ -104,6 +105,7 @@ class ProxyLeapNet(BaseNNProxy):
                              attr_y=attr_y,
                              layer=layer,
                              layer_act=layer_act)
+        self._mult_by_zero_lines_pred = mult_by_zero_lines_pred
         # datasets
         self._my_tau = None
         self._sz_tau = None
@@ -257,7 +259,7 @@ class ProxyLeapNet(BaseNNProxy):
             # predict now the variable
             name_output = "{}_hat".format(nm_)
             # force the model to output 0 when the powerline is disconnected
-            if self.tensor_line_status is not None and nm_ in self._line_attr:
+            if self._mult_by_zero_lines_pred and self.tensor_line_status is not None and nm_ in self._line_attr:
                 pred_ = Dense(sz_out, name=f"{nm_}_force_disco")(lay)
                 pred_ = tfk_multiply((pred_, self.tensor_line_status), name=name_output)
             else:
@@ -544,6 +546,7 @@ class ProxyLeapNet(BaseNNProxy):
         # save attribute for the "extra" database
         res["attr_tau"] = [str(el) for el in self.attr_tau]
         res["_sz_tau"] = [int(el) for el in self._sz_tau]
+        res["mult_by_zero_lines_pred"] = self._mult_by_zero_lines_pred
 
         # save means and standard deviation
         res["_m_x"] = []
@@ -605,6 +608,13 @@ class ProxyLeapNet(BaseNNProxy):
         self.attr_tau = tuple([str(el) for el in dict_["attr_tau"]])
         self._sz_tau = [int(el) for el in dict_["_sz_tau"]]
         super().load_metadata(dict_)
+
+        if "mult_by_zero_lines_pred" in dict_:
+            # attribute added in version 0.0.3, for compatibility with previously saved models
+            self._mult_by_zero_lines_pred = bool(dict_["mult_by_zero_lines_pred"])
+        else:
+            # previous behaviour was to put always "True" which implied no addition in the _m_a_or
+            self._mult_by_zero_lines_pred = True
 
         for key in ["_m_x", "_m_y", "_m_tau", "_sd_x", "_sd_y", "_sd_tau"]:
             setattr(self, key, [])
