@@ -44,7 +44,7 @@ def main(limit_gpu_memory=True,
          metrics=DEFAULT_METRICS,  # which metrics are used to evaluate the performance of the model
          verbose=1,  # do I print the results of the model
          # proxy part (sizes are not really "parametrized" this is just "something that works approximately)
-         model_name="leapnet_case_14_3",
+         model_name="leapnet_case_14",
          sizes_enc=(20,),
          sizes_main=(150, 150),
          sizes_out=(40,),
