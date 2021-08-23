@@ -13,6 +13,7 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error  # mean_abso
 from leap_net.metrics import nrmse
 from leap_net.metrics import pearson_r
 from leap_net.metrics import mape
+from leap_net.metrics import mape_quantile
 
 import grid2op
 from grid2op.Chronics import MultifolderWithCache
@@ -25,6 +26,7 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "pearson_r_avg": pearson_r,
                    "mape_avg": mape,
                    "rmse_avg": lambda y_true, y_pred: np.sqrt(mean_squared_error(y_true=y_true, y_pred=y_pred)),
+                   "mape_90_avg": mape_quantile,
                    "MSE": lambda y_true, y_pred: mean_squared_error(y_true, y_pred, multioutput="raw_values"),
                    "MAE": lambda y_true, y_pred: mean_absolute_error(y_true, y_pred, multioutput="raw_values"),
                    "NRMSE": lambda y_true, y_pred: nrmse(y_true, y_pred, multioutput="raw_values"),
@@ -32,6 +34,9 @@ DEFAULT_METRICS = {"MSE_avg": mean_squared_error,
                    "mape": lambda y_true, y_pred: mape(y_true, y_pred, multioutput="raw_values"),
                    "rmse": lambda y_true, y_pred: np.sqrt(
                        mean_squared_error(y_true=y_true, y_pred=y_pred, multioutput="raw_values")),
+                   "mape_90": lambda y_true, y_pred: mape_quantile(y_true=y_true,
+                                                                   y_pred=y_pred,
+                                                                   multioutput="raw_values"),
                    }
 
 
@@ -64,7 +69,8 @@ def create_env(env_name, use_lightsim_if_available=True):
             from lightsim2grid.LightSimBackend import LightSimBackend
             backend_cls = LightSimBackend
         except ImportError as exc_:
-            warnings.warn("You ask to use lightsim backend if it's available. But it's not available on your system.")
+            warnings.warn(f"You ask to use lightsim backend if it's available. But it's not available on "
+                          f"your system (error \"{exc_}\").")
 
     if backend_cls is None:
         from grid2op.Backend import PandaPowerBackend

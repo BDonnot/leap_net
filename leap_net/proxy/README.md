@@ -71,7 +71,7 @@ grid etc.
 ## The "proxy" interface
 
 In this section I will introduce what is the "interface" the proxy must implement in order to be used in this
-"framework". The proxy must inherit from [BaseProxy](./BaseProxy.py) (see the documentation for more information). 
+"framework". The proxy must inherit from [BaseProxy](baseProxy.py) (see the documentation for more information). 
 
 ### Creating a custom proxy class
 When you want to create a custom proxy, you should implement the following method
@@ -84,7 +84,7 @@ When you want to create a custom proxy, you should implement the following metho
   "trainable" (for example the dc approximation, or a proxy based on a backend is not trainable). But if your
   proxy is made from a "machine learning" algorithm you should implement this methods. **NB** we don't recommend
   to implement the `train` method of the `BaseProxy` class. In case you want a model that is trainable, we highly
-  recommend to inherit from [`BaseNNProxy`](./BaseNNProxy.py) and only implement the "_train_model" method as stated
+  recommend to inherit from [`BaseNNProxy`](baseNNProxy.py) and only implement the "_train_model" method as stated
   here.
 
 And optionally, the "most common" methods that can be implemented are:
@@ -128,7 +128,7 @@ proxy = MyAweSomeProxyClass(name,  # name you give to your proxy, for example "l
                             ...
                             )
 ```
-More information are given in the documentation of [BaseProxy](./BaseProxy.py).
+More information are given in the documentation of [BaseProxy](baseProxy.py).
 
 ### Input and output data
 The "proxy" is learned from data stored "on the fly" generate by running grid2op environments. These data are stored

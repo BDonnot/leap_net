@@ -6,7 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-from leap_net.proxy.BaseProxy import BaseProxy
+from leap_net.proxy.baseProxy import BaseProxy
 
 # this will be used to compute the DC approximation
 from grid2op.dtypes import dt_int

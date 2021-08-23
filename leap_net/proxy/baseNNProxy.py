@@ -19,7 +19,7 @@ import tensorflow as tf
 import tensorflow.keras.optimizers as tfko
 from tensorflow.keras.layers import Dense
 
-from leap_net.proxy.BaseProxy import BaseProxy
+from leap_net.proxy.baseProxy import BaseProxy
 
 
 class BaseNNProxy(BaseProxy):
@@ -203,7 +203,16 @@ class BaseNNProxy(BaseProxy):
             The extension used to save the model (for example ".h5" should output a file named xxx.h5)
 
         """
-        self._model.save(os.path.join(path, f"weights{ext}"))
+        _if_no_model = os.path.join(path, ".nomodel")
+        if self._model is not None:
+            # save the weights
+            self._model.save(os.path.join(path, f"weights{ext}"))
+            # remove the ".nomodel" if it exists
+            if os.path.exists(_if_no_model):
+               os.remove(_if_no_model)
+        else:
+            with open(_if_no_model, mode="w", encoding="utf-8") as f:
+                f.write("EMPTY NEURAL NETWORK, IS THIS NORMAL ?\n")
 
     def load_data(self, path, ext=".h5"):
         """
@@ -233,13 +242,20 @@ class BaseNNProxy(BaseProxy):
         is writing to the same file.
 
         """
-        with tempfile.TemporaryDirectory() as path_tmp:
-            nm_file = f"weights{ext}"
-            nm_tmp = os.path.join(path_tmp, nm_file)
-            # copy the weights into this file
-            shutil.copy(os.path.join(path, nm_file), nm_tmp)
-            # load this copy (make sure the proper file is not corrupted)
-            self._model.load_weights(nm_tmp)
+        if os.path.exists(os.path.join(path, ".nomodel")):
+            # no weights were present
+            if self._model is not None:
+                raise RuntimeError("The _model member is initialized, yet no weights were previously saved. "
+                                   "Thus i cannot restore it.")
+            # otherwise i do nothing: model un initialized and no weights stored is perfectly fine
+        else:
+            with tempfile.TemporaryDirectory() as path_tmp:
+                nm_file = f"weights{ext}"
+                nm_tmp = os.path.join(path_tmp, nm_file)
+                # copy the weights into this file
+                shutil.copy(os.path.join(path, nm_file), nm_tmp)
+                # load this copy (make sure the proper file is not corrupted even if the loading fails)
+                self._model.load_weights(nm_tmp)
 
     def _train_model(self, data):
         """

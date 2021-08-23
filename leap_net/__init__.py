@@ -9,7 +9,7 @@
 from leap_net.Ltau import Ltau
 from leap_net.ResNetLayer import ResNetLayer
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 __all__ = ["Ltau", "ResNetLayer", "LtauNoAdd"]
 
 try:
@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 try:
-    from leap_net.proxy import xxx
-    __all__ += ["MultipleDasetCallBacks"]
+    from leap_net.proxy import BaseProxy, BaseNNProxy, ProxyBackend, ProxyLeapNet, AgentWithProxy
+    __all__ += ["BaseProxy", "BaseNNProxy", "ProxyBackend", "ProxyLeapNet", "AgentWithProxy"]
 except ImportError:
     pass

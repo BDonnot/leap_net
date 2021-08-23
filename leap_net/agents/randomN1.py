@@ -16,6 +16,15 @@ class RandomN1(BaseAgent):
     This "agent" will randomly disconnect exactly 1 powerline from the grid.
 
     **NB** Every powerline that is not chosen at random to be disconnected will be reconnected by force.
+
+    Notes
+    -----
+    This agent will modify all the powerline at all steps. Make sure the `env.parameters.MAX_LINE_STATUS_CHANGED` is
+    big enough !
+
+    Also the `env.parameters.NB_TIMESTEP_COOLDOWN_LINE` need to be small enough ! Otherwise a powerline cannot be
+    acted upon at every step.
+
     """
 
     def __init__(self, action_space):
@@ -26,7 +35,7 @@ class RandomN1(BaseAgent):
         # represent the action "exactly one powerline is disconnected
         self.powerline_actions = 1 - 2 * np.eye(action_space.n_line, dtype=dt_int)
 
-    def act(self, obs, reward, done):
+    def act(self, obs, reward, done=False):
         id_ = self.space_prng.choice(self.action_space.n_line)
         arr_ = self.powerline_actions[id_, :]
         li_bus = [(i, el) for i, el in enumerate(arr_)]

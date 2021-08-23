@@ -6,8 +6,11 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-__all__ = ["RandomNN1", "RandomN2", "RandomN1"]
+__all__ = ["RandomNN1", "RandomN2", "RandomN1", "RandomSub1", "RandomSub2", "RandomRefSub1"]
 
-from leap_net.agents.RandomNN1 import RandomNN1
-from leap_net.agents.RandomN1 import RandomN1
-from leap_net.agents.RandomN2 import RandomN2
+from leap_net.agents.randomNN1 import RandomNN1
+from leap_net.agents.randomN1 import RandomN1
+from leap_net.agents.randomN2 import RandomN2
+from leap_net.agents.randomSub1 import RandomSub1
+from leap_net.agents.randomSub2 import RandomSub2
+from leap_net.agents.randomRefSub1 import RandomRefSub1

@@ -16,7 +16,7 @@ from tqdm import tqdm
 from collections.abc import Iterable
 from grid2op.Agent import BaseAgent
 
-from leap_net.proxy.ProxyLeapNet import ProxyLeapNet
+from leap_net.proxy.proxyLeapNet import ProxyLeapNet
 import numpy as np
 
 try:
@@ -290,6 +290,10 @@ class AgentWithProxy(BaseAgent):
             of the proxy.
 
         """
+        if not os.path.exists(save_path):
+            print(f"Creating path \"{save_path}\" to save the logs of the trained agent")
+            os.mkdir(save_path)
+
         error_plot = None
         try:
             error_plot = PlotErrorOnGrid(env)
