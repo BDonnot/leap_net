@@ -32,6 +32,8 @@ class RandomAct1(BaseAgent):
       `change_line_status`)
     - at least one action should do something (full do nothing action or an empty list are not allowed)
     - disconnection of element using "set_bus" are not allowed (not checked but expect some bugs if you do that)
+    - should set all the elements of a substation if it acts on it (ie should explicitely set to 1 and not keep
+      at 0 some elements)
 
     Notes
     -----
@@ -97,13 +99,13 @@ class RandomAct1(BaseAgent):
                 continue
 
             if np.sum(subs_impacted) > 1:
-                raise RuntimeError(f"For now RandomAct1 (and especially RandomAct2) only works when provided actions "
-                                   f"act each on at most one substation. Please check element {act_ref_id} of the "
-                                   f"provided action")
+                warnings.warn(f"For now RandomAct1 (and especially RandomAct2) only works when provided actions "
+                              f"act each on at most one substation. Please check element {act_ref_id} of the "
+                              f"provided action")
             subs_id = np.where(subs_impacted)[0]
             if np.any(subs_impact[subs_id] > 1):
                 if not warning_different_act_same_sub_issued:
-                    subs_this = np.where(subs_impact[subs_id] > 1)[0]
+                    subs_this = subs_id[np.where(subs_impact[subs_id] > 1)[0]]
                     warnings.warn(f"More than one unitary action affect substation: {subs_this}. Note that when "
                                   f"combining "
                                   f"actions, the actions acting on the same substation will not be combined "

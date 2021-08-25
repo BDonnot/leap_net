@@ -33,8 +33,10 @@ class RandomRefAct1(RandomAct1):
 
     """
 
-    def __init__(self, action_space, list_act=()):
+    def __init__(self, action_space, p=0.5, list_act=()):
         super(RandomRefAct1, self).__init__(action_space, list_act=list_act)
+        self.p = dt_float(p)
+        self._1_p = 1. - self.p
 
     def act(self, obs, reward, done=False):
         ur = self.space_prng.uniform()
