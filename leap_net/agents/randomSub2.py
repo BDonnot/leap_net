@@ -25,7 +25,7 @@ class RandomSub2(RandomSub1):
     This agent will modify all the substations at all steps. Make sure the `env.parameters.MAX_SUB_CHANGED` is
     big enough !
 
-    Also the `env.parameters.NB_TIMESTEP_COOLDOWN_SUB` need to be small enough ! Otherwise a substation cannot be
+    Also the `env.parameters.NB_TIMESTEP_COOLDOWN_SUB` need to be large enough ! Otherwise a substation cannot be
     acted upon at every step.
 
     """
