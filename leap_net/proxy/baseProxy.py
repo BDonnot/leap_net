@@ -700,7 +700,13 @@ class BaseProxy(ABC):
             mult_tmp = np.array([max(np.abs(val), 1.0) for val in getattr(obs, attr_nm)], dtype=self.dtype)
         elif attr_nm in ["a_or", "a_ex"]:
             add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
-            mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
+            if hasattr(obs, "thermal_limit"):
+                mult_tmp = obs.thermal_limit
+            elif hasattr(obs, "rho"):
+                mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
+            else:
+                # defaults would be good enough
+                pass
             mult_tmp[mult_tmp <= 1.] = 1.0
         elif attr_nm == "line_status":
             # encode back to 0: connected, 1: disconnected

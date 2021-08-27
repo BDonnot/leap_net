@@ -136,7 +136,6 @@ class ProxyLeapNet(BaseNNProxy):
         self.tensor_line_status = None
         self._idx = None
         self._where_id = None
-        self.tensor_line_status = None
         try:
             self._idx = self.attr_tau.index("line_status")
             self._where_id = "tau"
@@ -157,6 +156,10 @@ class ProxyLeapNet(BaseNNProxy):
         self._nb_max_topo = None  # used for topo_vect_handler "online_list"
         self._current_used_topo_max_id = None  # used for topo_vect_handler "online_list"
         self.dict_topo = None
+        self.topo_vect_handler = None
+        self._affect_right_fun_topo_class(topo_vect_to_tau)
+
+    def _affect_right_fun_topo_class(self, topo_vect_to_tau):
         if topo_vect_to_tau == "raw":
             self.topo_vect_handler = self._raw_topo_vect
         elif topo_vect_to_tau == "all":
@@ -547,6 +550,15 @@ class ProxyLeapNet(BaseNNProxy):
         res["attr_tau"] = [str(el) for el in self.attr_tau]
         res["_sz_tau"] = [int(el) for el in self._sz_tau]
         res["mult_by_zero_lines_pred"] = self._mult_by_zero_lines_pred
+        res["topo_vect_to_tau"] = self.topo_vect_to_tau
+        if self._where_id is not None:
+            res["_where_id"] = str(self._where_id)
+        else:
+            res["_where_id"] = None
+        if self._idx is not None:
+            res["_idx"] = int(self._idx)
+        else:
+            res["_idx"] = None
 
         # save means and standard deviation
         res["_m_x"] = []
@@ -607,6 +619,28 @@ class ProxyLeapNet(BaseNNProxy):
         """
         self.attr_tau = tuple([str(el) for el in dict_["attr_tau"]])
         self._sz_tau = [int(el) for el in dict_["_sz_tau"]]
+        if "topo_vect_to_tau" in dict_:
+            self.topo_vect_to_tau = str(dict_["topo_vect_to_tau"])
+        else:
+            # default behaviour before this feature has been introduced
+            self.topo_vect_to_tau = "raw"
+        self._affect_right_fun_topo_class(self.topo_vect_to_tau)
+
+        if "where_id" in dict_:
+            tmp = dict_["_where_id"]
+            if tmp is not None:
+                self._where_id = str(tmp)
+        else:
+            # default values
+            self._where_id = "tau"
+        if "_idx" in dict_:
+            tmp = dict_["_idx"]
+            if tmp is not None:
+                self._idx = int(tmp)
+        else:
+            # default values
+            self._idx = None
+
         super().load_metadata(dict_)
 
         if "mult_by_zero_lines_pred" in dict_:
