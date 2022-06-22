@@ -1093,12 +1093,31 @@ class ProxyLeapNet(BaseNNProxy):
                 continue
 
             # so i have a different topology that the reference one
-            lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
-            if lookup in self.dict_topo:
-                res[self.dict_topo[lookup]] = 1.
+            #lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+            topo_found=False
+
+            if (np.all(conn)):
+                lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+                if lookup in self.dict_topo:
+                    res[self.dict_topo[lookup]] = 1.
+                    topo_found = True
             else:
+                for topo_sub in self.dict_topo:
+                    if topo_sub[0] == sub_id:
+                        topo=np.array(topo_sub[1])
+                        if np.all(topo[conn]==this_sub_topo[conn]):
+                            res[self.dict_topo[topo_sub]] = 1.
+                            topo_found=True
+                            conn_elements_bus_bar_2=conn[(topo_found==2)]
+                            break
+
+            #if lookup in self.dict_topo:
+            #    res[self.dict_topo[lookup]] = 1.
+            #else:
+            if not topo_found:
                 warnings.warn(f"Topology {lookup} is not found on the topo dictionary")
         return res
+
 
     def _online_list_topo_encode(self, obs):
         """

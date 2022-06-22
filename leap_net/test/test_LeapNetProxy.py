@@ -215,7 +215,7 @@ class Test(unittest.TestCase):
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
                                  kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2)), (1, (2, 1, 2, 1, 2, 1))]
                                  )
             proxy.init([self.obs])
 
@@ -295,6 +295,23 @@ class Test(unittest.TestCase):
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 1
         assert res[2] == 1.
+
+        # test that if a line is disconnected, we are still able to match the topologies
+        env = self.env
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, -1, 1, 2, 1))]}})#(2, 1, 2, 1, 2, 1)
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[6] == 1.
+
+        env = self.env
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, -1, 2, 1, 2, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[6] == 1.
 
     def test_tau_from_online_topo(self):
         self._aux_test_tau_from_online_topo()
