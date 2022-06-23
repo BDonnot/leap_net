@@ -25,18 +25,21 @@ pkgs = {
     }
 }
 
+with open("README.md", "r", encoding="utf-8") as fh:
+    long_description = fh.read()
+    
 setup(name='leap_net',
       version='0.0.4',
-      description='An environment that allows to perform powergrid optimization.',
-      long_description='Built with modularity in mind, this package allows to perform the same operations '
-                       'independently of the software used to compute powerflow or method to generate grid '
-                       'states or forecasts.',
+      description='An implementation in tensorflow / keras of the LeapNet model',
+      long_description=long_description,
+      long_description_content_type="text/markdown",
       classifiers=[
           'Development Status :: 4 - Beta',
           'Programming Language :: Python :: 3.6',
           'Programming Language :: Python :: 3.7',
           'Programming Language :: Python :: 3.8',
           'Programming Language :: Python :: 3.9',
+          'Programming Language :: Python :: 3.10',
           "License :: OSI Approved :: Mozilla Public License 2.0 (MPL 2.0)",
           "Intended Audience :: Developers",
           "Intended Audience :: Education",
@@ -47,7 +50,8 @@ setup(name='leap_net',
       author='Benjamin DONNOT',
       author_email='benjamin.donnot@rte-france.com',
       url="https://github.com/bdonnot/leap_net",
-      license='MPL',
+      python_requires='>=3.7',
+      license='Mozilla Public License 2.0 (MPL 2.0)',
       packages=setuptools.find_packages(),
       include_package_data=True,
       install_requires=pkgs["required"],
