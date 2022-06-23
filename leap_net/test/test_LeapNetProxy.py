@@ -215,7 +215,9 @@ class Test(unittest.TestCase):
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
                                  kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2)), 
+                                             (1, (2, 1, 2, 1, 2, 1))
+                                             ]
                                  )
             proxy.init([self.obs])
 
@@ -258,7 +260,7 @@ class Test(unittest.TestCase):
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 0
 
-        # test that everything on bys 2 and everything on bus 1 leads to the same result
+        # test that everything on bus 2 and everything on bus 1 leads to the same result
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
         obs, reward, done, info = env.step(act)
@@ -271,7 +273,7 @@ class Test(unittest.TestCase):
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 0
 
-        # check the symmetry 2 <-> 1
+        # check cumulative "actions"
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
         obs, reward, done, info = env.step(act)
@@ -282,7 +284,7 @@ class Test(unittest.TestCase):
         assert res[0] == 1.
         assert res[4] == 1.
 
-        # test the symmetry (gain...) why not
+        # test the symmetry (again...) why not
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(0, (2, 2, 2))]}})
         obs, reward, done, info = env.step(act)
@@ -295,7 +297,30 @@ class Test(unittest.TestCase):
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 1
         assert res[2] == 1.
+        
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(12, (1, 2, 2, 1))]}})
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[3] == 1.
 
+        # test that if a line is disconnected, we are still able to match the topologies
+        # see https://github.com/BDonnot/leap_net/pull/12/files
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, -1, 1, 2, 1))]}})  # (2, 1, 2, 1, 2, 1)
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[6] == 1.
+
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(1, (2, -1, 2, 1, 2, 1))]}})  # (2, 1, 2, 1, 2, 1)
+        obs, reward, done, info = env.step(act)
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[6] == 1.
+        
     def test_tau_from_online_topo(self):
         self._aux_test_tau_from_online_topo()
 

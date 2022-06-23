@@ -701,7 +701,7 @@ class BaseProxy(ABC):
         elif attr_nm in ["a_or", "a_ex"]:
             add_tmp = self.dtype(0.)  # because i multiply by the line status, so i don't want any bias
             if hasattr(obs, "thermal_limit"):
-                mult_tmp = obs.thermal_limit
+                mult_tmp = 1.0 * obs.thermal_limit
             elif hasattr(obs, "rho"):
                 mult_tmp = np.abs(obs.a_or / (obs.rho + 1e-2))  # which is equal to the thermal limit
             else:
