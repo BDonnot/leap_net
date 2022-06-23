@@ -26,7 +26,7 @@ pkgs = {
 }
 
 setup(name='leap_net',
-      version='0.0.3',
+      version='0.0.4',
       description='An environment that allows to perform powergrid optimization.',
       long_description='Built with modularity in mind, this package allows to perform the same operations '
                        'independently of the software used to compute powerflow or method to generate grid '

@@ -1,9 +1,14 @@
 Change Log
 ===========
-[] - 2021-xx-yy
------------------
+
+
+[0.0.4] - 2022-06-23
+--------------------
 - [FIXED] a bug preventing the symmetry to be properly taken into account in `ProxyLeapNet`
   when "topo_vect_to_tau" was not "raw"
+- [FIXED] missing a copy when the "thermal_limit" was in the observation and used by the proxy 
+  (it was not copied and this caused some error with recent grid2op versions)
+
 
 [0.0.3] - 2021-08-23
 ----------------------
