@@ -1093,11 +1093,16 @@ class ProxyLeapNet(BaseNNProxy):
                 continue
 
             # so i have a different topology that the reference one
-            lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
-            if lookup in self.dict_topo:
-                res[self.dict_topo[lookup]] = 1.
+            topo_1 = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+            topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in this_sub_topo]))
+            if topo_1 in self.dict_topo:
+                res[self.dict_topo[topo_1]] = 1.
+            elif topo_2 in self.dict_topo:
+                # I need to include both of them because of the convention "disconnected lines
+                # are assigned to bus 1".
+                res[self.dict_topo[topo_2]] = 1.
             else:
-                warnings.warn(f"Topology {lookup} is not found on the topo dictionary")
+                warnings.warn(f"Topology {topo_1} is not found on the topo dictionary")
         return res
 
     def _online_list_topo_encode(self, obs):
@@ -1238,8 +1243,16 @@ class ProxyLeapNet(BaseNNProxy):
                 # complete / reference topology, so i don't do anything
                 continue
             # so i have a different topology that the reference one
-            lookup = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
-            if lookup not in self.dict_topo:
+            topo_1 = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
+            topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in this_sub_topo]))
+            if topo_1 in self.dict_topo:
+                # topo 1 is found in the already known topologies
+                sub_topo_id_ = self.dict_topo[topo_1]
+            elif topo_2 in self.dict_topo:
+                # topo 2 is found in the already known topologies
+                sub_topo_id_ = self.dict_topo[topo_2]
+            else:
+                # I need to insert a knew topology
                 if self._current_used_topo_max_id >= self._nb_max_topo:
                     # we can't add another topology...
                     warnings.warn(f"Already too much topologies encoded. Please consider increasing \"kwargs_tau\""
@@ -1250,14 +1263,10 @@ class ProxyLeapNet(BaseNNProxy):
                                   f"but looks doable.")
                     sub_topo_id_ = None
                 else:
-                    topo_1 = lookup
-                    topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in this_sub_topo]))
                     self.dict_topo[topo_1] = self._current_used_topo_max_id
                     self.dict_topo[topo_2] = self._current_used_topo_max_id
                     sub_topo_id_ = self._current_used_topo_max_id
                     self._current_used_topo_max_id += 1
-            else:
-                sub_topo_id_ = self.dict_topo[lookup]
             if sub_topo_id_ is not None:
                 res[sub_topo_id_] = 1.
         return res
