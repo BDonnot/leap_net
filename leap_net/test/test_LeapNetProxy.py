@@ -59,8 +59,15 @@ class Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as path:
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
-                                 kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                                 kwargs_tau=[(0, (2, 1, 1)),
+                                             (0, (1, 2, 1)),
+                                             (1, (2, 1, 1, 1, 1, 1)),
+                                             (12, (2, 1, 1, 2)),
+                                             (13, (2, 1, 2)),
+                                             (13, (1, 2, 2)), 
+                                             (1, (2, 1, 2, 1, 2, 1)),
+                                             (3, (2, 2, 1, 1, 1, 1)),
+                                             ]
                                  )
             proxy.init([self.obs])
             proxy.save_data(path)
@@ -214,14 +221,19 @@ class Test(unittest.TestCase):
         if proxy is None:
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
-                                 kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2)), 
-                                             (1, (2, 1, 2, 1, 2, 1))
+                                 kwargs_tau=[(0, (2, 1, 1)),
+                                             (0, (1, 2, 1)),
+                                             (1, (2, 1, 1, 1, 1, 1)),
+                                             (12, (2, 1, 1, 2)),
+                                             (13, (2, 1, 2)),
+                                             (13, (1, 2, 2)), 
+                                             (1, (2, 1, 2, 1, 2, 1)),
+                                             (3, (2, 2, 1, 1, 1, 1)),
                                              ]
                                  )
             proxy.init([self.obs])
-
         env = self.env
+        
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(0, (2, 1, 1))]}})
         obs, reward, done, info = env.step(act)
@@ -252,25 +264,30 @@ class Test(unittest.TestCase):
         assert np.sum(res) == 1
         assert res[2] == 1.
 
-        # I test that -1 are still considered as 1, even if everything is on bus 1
-        obs = env.reset()
-        act = env.action_space({"set_bus": {"substations_id": [(1, (1, -1, 1, 1, 1, 1))]}})
-        obs, reward, done, info = env.step(act)
-        assert not done
-        res = proxy.topo_vect_handler(obs)
-        assert np.sum(res) == 0
+        # # I test that -1 are still considered as 1, even if everything is on bus 1
+        # # NO MORE TRUE
+        # obs = env.reset()
+        # act = env.action_space({"set_bus": {"substations_id": [(1, (1, -1, 1, 1, 1, 1))]}})
+        # obs, reward, done, info = env.step(act)
+        # assert not done
+        # res = proxy.topo_vect_handler(obs)
+        # assert np.sum(res) == 0
 
         # test that everything on bus 2 and everything on bus 1 leads to the same result
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(12, (2, 2, 2, 2))]}})
         obs, reward, done, info = env.step(act)
-        res = proxy.topo_vect_handler(obs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 0
 
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(13, (2, 2, 2))]}})
         obs, reward, done, info = env.step(act)
-        res = proxy.topo_vect_handler(obs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 0
 
         # check cumulative "actions"
@@ -288,7 +305,9 @@ class Test(unittest.TestCase):
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(0, (2, 2, 2))]}})
         obs, reward, done, info = env.step(act)
-        res = proxy.topo_vect_handler(obs)
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore")
+            res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 0
 
         obs = env.reset()
@@ -305,7 +324,7 @@ class Test(unittest.TestCase):
         assert np.sum(res) == 1
         assert res[3] == 1.
 
-        # test that if a line is disconnected, we are still able to match the topologies
+        # test that if a single line is disconnected, we are still able to match the topologies
         # see https://github.com/BDonnot/leap_net/pull/12/files
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, -1, 1, 2, 1))]}})  # (2, 1, 2, 1, 2, 1)
@@ -313,13 +332,40 @@ class Test(unittest.TestCase):
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 1
         assert res[6] == 1.
-
+        
         obs = env.reset()
         act = env.action_space({"set_bus": {"substations_id": [(1, (2, -1, 2, 1, 2, 1))]}})  # (2, 1, 2, 1, 2, 1)
         obs, reward, done, info = env.step(act)
         res = proxy.topo_vect_handler(obs)
         assert np.sum(res) == 1
         assert res[6] == 1.
+    
+        # see https://github.com/BDonnot/leap_net/pull/12
+        obs = env.reset()
+        indices_sub_1 = range(proxy.subs_index[1][0],proxy.subs_index[1][1])
+        obs.topo_vect[indices_sub_1] = [2, 1, 2, 1, -1, - 1]
+        #act = env.action_space({"set_bus": {"substations_id": [(1, (2, 1, 2, 2, -1, - 1))]}})  # (2, 1, 2, 2, 1, 1)
+        #obs, reward, done, info = env.step(act) #simulation is diverging so just modifying the obs directly
+        res = proxy.topo_vect_handler(obs)
+        assert np.sum(res) == 1
+        assert res[6] == 1.
+        # it works because it's not ambiguous, there is one, and only one match
+        
+        # it should not work because
+        # this topo match both the last topo and the
+        # ref topo
+        obs = env.reset()
+        act = env.action_space({"set_bus": {"substations_id": [(3, (-1, 1, 1, 1, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        assert not done
+        assert np.sum(obs.topo_vect == -1) == 2
+        act = env.action_space({"set_bus": {"substations_id": [(3, (0, -1, 1, 1, 1, 1))]}})
+        obs, reward, done, info = env.step(act)
+        assert not done
+        assert np.sum(obs.topo_vect == -1) == 4
+        with self.assertRaises(NotImplementedError):
+            # match ref topo and last topo of the list
+            res = proxy.topo_vect_handler(obs)
         
     def test_tau_from_online_topo(self):
         self._aux_test_tau_from_online_topo()

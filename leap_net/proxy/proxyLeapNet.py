@@ -9,6 +9,7 @@
 import copy
 import warnings
 import numpy as np
+import itertools
 
 import tensorflow as tf
 from tensorflow.keras.layers import Dense
@@ -61,19 +62,30 @@ class ProxyLeapNet(BaseNNProxy):
         all the substations of the grid and then assign a number (unique ID) for each of them. The resulting `tau`
         vector is then the concatenation of the "one hot encoded" ID of the current "local topology" of each substation.
         More information is given in :func:`ProxyLeapNet._all_topo_encode` with usage examples on how to create it.
+        It does not handle the disconnected elements the same way than the "topo_vect_to_tau=given_list"
     3) `topo_vect_to_tau="given_list"`: it encodes the topology into a `tau` vector following the same convention
        as method 2) (`topo_vect_to_tau="all"`) with the difference that it only considers a given list of possible
        topologies instead of all the topologies of all the substation of the grid. This list should be provided
        as an input in the `kwargs_tau` argument. If a topology not given is encounter, it is mapped to the
-       reference topology.
+       reference topology. For this encoding, if an element is disconnect, we attempt to match it with 
+       a known topology by testing if it's on busbar 1 or 2. If ONE topology match then it's returned, otherwise
+       if 2 or more topology matches it raises an error.
     4) `topo_vect_to_tau="online_list"`: it encodes the topology into a `tau` vector following the same convention as
        method 2) (`topo_vect_to_tau="all"`) and 3) (`topo_vect_to_tau="given_list"`) but does not require to specify
        any list of topologies. Instead, each time a new "local topology" is encountered during training,
        it will be assigned to a new ID. When encountered again, this new ID will be re used. It can store a maximum
        of different topologies given as `kwargs_tau` argument. If too much topologies have been encountered, the
-       new ones will be encoded as the reference topology.
+       new ones will be encoded as the reference topology. By default, disconnected objects are
+       assigned to "busbar 1". There is then a difference of behaviour with the "given_list"
+       kwargs.
 
+    .. warning::
+        If you want to handle "properly" object disconnection, then you really
+        need to use `topo_vect_to_tau="given_list"`.
+        
     """
+    INDEX_REF_TOPO_WHEN_LIST = -257
+    
     def __init__(self,
                  name="leap_net",
                  max_row_training_set=int(1e5),
@@ -156,6 +168,7 @@ class ProxyLeapNet(BaseNNProxy):
         self._nb_max_topo = None  # used for topo_vect_handler "online_list"
         self._current_used_topo_max_id = None  # used for topo_vect_handler "online_list"
         self.dict_topo = None
+        self.disco_topo = None
         self.topo_vect_handler = None
         self._affect_right_fun_topo_class(topo_vect_to_tau)
 
@@ -315,6 +328,34 @@ class ProxyLeapNet(BaseNNProxy):
                                "`kwarg_tau` argument")
         res = {}
         topo_id = 0
+        disco_topo = {}
+        # add the topology where elements are disconnected but that still match the reference topo
+        # where everything is connected together
+        for sub_id in range(obs.n_sub):
+            # foreach substation, i can have disconnected elements
+            nb_el_sub = obs.sub_info[sub_id]
+            for nb_still_co in range(nb_el_sub - 1):
+                # i can have any number of disconnected elements (except everything)
+                elids = list(range(nb_el_sub))
+                for index_disco in itertools.combinations(elids, nb_still_co + 1): 
+                    # i loop through all the combinations of
+                    # topology having `nb_still_co + 1` connected elements
+                    
+                    # they are all on bus 1 => match ref topo                              
+                    topo_ref_1 = (sub_id, tuple([0 if el_id not in index_disco else 1
+                                                for el_id in range(nb_el_sub)]))
+                    if topo_ref_1 not in disco_topo:
+                        disco_topo[topo_ref_1] = set()
+                    disco_topo[topo_ref_1].add(ProxyLeapNet.INDEX_REF_TOPO_WHEN_LIST)
+                    
+                    # they are all on bus 2 => match ref topo
+                    topo_ref_2 = (sub_id, tuple([0 if el_id not in index_disco else 2
+                                                for el_id in range(nb_el_sub)]))
+                    if topo_ref_2 not in disco_topo:
+                        disco_topo[topo_ref_2] = set()
+                    disco_topo[topo_ref_2].add(ProxyLeapNet.INDEX_REF_TOPO_WHEN_LIST)    
+        
+        # now add the encoding of the topology provided by the user 
         for component, (sub_id, sub_topo) in enumerate(topo_list):
             if len(sub_topo) != obs.sub_info[sub_id]:
                 raise RuntimeError(f"The provided topology for substation {sub_id} counts {len(sub_topo)} values "
@@ -349,11 +390,31 @@ class ProxyLeapNet(BaseNNProxy):
                               f"Please check the \"topo_list\" that you provided in the "
                               "`kwarg_tau` argument")
             else:
+                # add complete topo
                 res[topo_1] = topo_id
                 res[topo_2] = topo_id
+                
+                # add topo where sme elements might be disconnected
+                for nb_disc_el in range(len(sub_topo) - 1):
+                    elids = list(range(len(sub_topo)))
+                    for index_disco in itertools.combinations(elids, nb_disc_el + 1):
+                        # add the topo encoded this way
+                        topo_1_ = (sub_id, tuple([int(el) if el_id not in index_disco else 0
+                                                for el_id, el in enumerate(sub_topo)]))
+                        if topo_1_ not in disco_topo:
+                            disco_topo[topo_1_] = set()
+                        disco_topo[topo_1_].add(topo_id)
+                            
+                        topo_2_ = (sub_id, tuple([2 - int(el) + 1 if el_id not in index_disco else 0
+                                                for el_id, el in enumerate(sub_topo)]))
+                        if topo_2_ not in disco_topo:
+                            disco_topo[topo_2_] = set()
+                        disco_topo[topo_2_].add(topo_id)
+                    
                 topo_id += 1
+                
         nb_diff_topo = topo_id
-        return res, nb_diff_topo
+        return res, nb_diff_topo, disco_topo
 
     def init(self, obss):
         """
@@ -379,7 +440,8 @@ class ProxyLeapNet(BaseNNProxy):
         elif self.topo_vect_to_tau == "given_list":
             obs = obss[0]
             self._init_sub_index(obs)
-            self.dict_topo, self.nb_diff_topo = self._process_topo_list(obs, self.kwargs_tau)
+            self.dict_topo, self.nb_diff_topo, disco_topo = self._process_topo_list(obs, self.kwargs_tau)
+            self.disco_topo = disco_topo
         elif self.topo_vect_to_tau == "online_list":
             obs = obss[0]
             self._init_sub_index(obs)
@@ -438,6 +500,10 @@ class ProxyLeapNet(BaseNNProxy):
 
         self._metadata_loaded = True
 
+    def _encode_subid_topo(self, sub_id, topo_descr):
+        rest_ = ','.join([str(el) for el in topo_descr])
+        return f"{sub_id}@{rest_}"
+    
     def _save_dict_topo(self, path):
         """utility functions to save self.dict_topo as json, because json default dump function
         does not like dictionnary keys that are tuple...
@@ -452,15 +518,33 @@ class ProxyLeapNet(BaseNNProxy):
 
         import os
         import json
-        dict_serialized = {}
+        dict_serialized = {}      
+              
         for (sub_id, topo_descr), topo_id in self.dict_topo.items():
-            rest_ = ','.join([str(el) for el in topo_descr])
-            new_key = f"{sub_id}@{rest_}"
+            new_key = self._encode_subid_topo(sub_id, topo_descr)
             dict_serialized[new_key] = topo_id
 
         with open(os.path.join(path, "dict_topo.json"), "w", encoding="utf-8") as f:
             json.dump(obj=dict_serialized, fp=f)
 
+    def _save_dict_disco_topo(self, path):
+        import os
+        import json
+        dict_serialized = {}
+                    
+        for (sub_id, topo_descr), topo_ids in self.disco_topo.items():
+            new_key = self._encode_subid_topo(sub_id, topo_descr)
+            dict_serialized[new_key] = list(topo_ids)
+
+        with open(os.path.join(path, "disco_topo.json"), "w", encoding="utf-8") as f:
+            json.dump(obj=dict_serialized, fp=f)
+            
+    def _decode_subid_topo(self, encoded_key):
+        sub_id, rest_ = encoded_key.split("@")
+        topo_descr = tuple([int(el) for el in rest_.split(",")])
+        decoded_key = (int(sub_id), topo_descr)
+        return decoded_key
+        
     def _load_dict_topo(self, path):
         """to load back the topo data...
 
@@ -477,14 +561,22 @@ class ProxyLeapNet(BaseNNProxy):
 
         with open(os.path.join(path, "dict_topo.json"), "r", encoding="utf-8") as f:
             dict_serialized = json.load(fp=f)
-
-        self.dict_topo = {}
+            
         for encoded_key, topo_id in dict_serialized.items():
-            sub_id, rest_ = encoded_key.split("@")
-            topo_descr = tuple([int(el) for el in rest_.split(",")])
-            decoded_key = (int(sub_id), topo_descr)
+            decoded_key = self._decode_subid_topo(encoded_key)
             self.dict_topo[decoded_key] = topo_id
 
+    def _load_dict_disco_topo(self, path):
+        import os
+        import json
+
+        with open(os.path.join(path, "disco_topo.json"), "r", encoding="utf-8") as f:
+            dict_serialized = json.load(fp=f)
+            
+        for encoded_key, topo_id in dict_serialized.items():
+            decoded_key = self._decode_subid_topo(encoded_key)
+            self.disco_topo[decoded_key] = set(topo_id)        
+        
     def _save_subs_index(self, path):
         """utility to save self.subs_index because json does not like "int64"...
         Nothing to do at loading time as python is perfectly fine with regular int
@@ -510,6 +602,7 @@ class ProxyLeapNet(BaseNNProxy):
                     arr=self.nb_diff_topo)
             self._save_dict_topo(path)
             self._save_subs_index(path)
+            self._save_dict_disco_topo(path)
         elif self.topo_vect_to_tau == "online_list":
             np.save(file=os.path.join(path, "_nb_max_topo.npy"),
                     arr=self._nb_max_topo)
@@ -533,12 +626,17 @@ class ProxyLeapNet(BaseNNProxy):
         elif self.topo_vect_to_tau == "given_list":
             with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
                 self.subs_index = json.load(fp=f)
+            self.dict_topo = {}
             self._load_dict_topo(path)
+            self.disco_topo = {}
+            self._load_dict_disco_topo(path)
             self.nb_diff_topo = np.load(file=os.path.join(path, "nb_diff_topo.npy"))
         elif self.topo_vect_to_tau == "online_list":
             with open(os.path.join(path, "subs_index.json"), "r", encoding="utf-8") as f:
                 self.subs_index = json.load(fp=f)
+            self.dict_topo = {}
             self._load_dict_topo(path)
+            
             self._nb_max_topo = int(np.load(file=os.path.join(path, "_nb_max_topo.npy")))
             self._current_used_topo_max_id = int(np.load(file=os.path.join(path, "_current_used_topo_max_id.npy")))
         # don't forget to load the weights of the NN
@@ -972,6 +1070,19 @@ class ProxyLeapNet(BaseNNProxy):
             prev += 2 ** nb_el - 1
         return res
 
+    def _update_topo_when_disco(self, res, topo, sub_id):
+        index_ = self.disco_topo[topo]
+        if len(index_) == 1:
+            topo_id = next(iter(index_))
+            if topo_id != ProxyLeapNet.INDEX_REF_TOPO_WHEN_LIST:
+                res[topo_id] = 1.
+        else:
+            raise NotImplementedError(f"Two \"taus index\" would match "
+                                        f"your topology for "
+                                        f"substation {sub_id}. It is not handled "
+                                        f"at the moment. Indexes {index_} matches")
+        
+        
     def _given_list_topo_encode(self, obs):
         """
         This methods require a pre selected set of substation topology that you can have (that should give at the
@@ -996,8 +1107,6 @@ class ProxyLeapNet(BaseNNProxy):
 
         **NB** in the description of the topologies, we expect vectors with only 1 and 2 (no 0, no -1 etc.)
 
-        **NB** if an object is disconnected, this method will behave as if it is connected to bus 1.
-
         **NB** if the topology seen in the observation is not found in the list of possible unary change,
         it raises a warning and returns the "tau_ref" vector. It will NOT raise an error in this case
 
@@ -1006,6 +1115,13 @@ class ProxyLeapNet(BaseNNProxy):
         (so swapping buses 1<->2 is in the provided list -- the constraint that disconnected object are
         on bus 1 still applies! )
 
+        **NB** as opposed to other methods, this method will be smarter in case
+        of disconnected elements. For example it will attempt to see if there is a 
+        "match" between any placement (on busbar 1 or 2) for each disconnected elements. 
+        (For example if element 0 is disconnected and you ask it to encode (1, 1, 2, 2)
+        and you get the topology (-1, 1, 2, 2) there is a match.) If there is more than
+        1 match it raises an error.
+        
         Parameters
         ----------
         obs
@@ -1080,7 +1196,6 @@ class ProxyLeapNet(BaseNNProxy):
         res = np.zeros(self.nb_diff_topo)
         # retrieve the topology
         topo_vect = 1 * obs.topo_vect
-
         # and now put the right number
         for sub_id in range(obs.n_sub):
             # TODO there might be a way to optimize that, but what for ?
@@ -1088,21 +1203,39 @@ class ProxyLeapNet(BaseNNProxy):
             this_sub_topo = topo_vect[beg_:end_]
             disco = this_sub_topo == -1
             conn = ~disco
-            if np.all(this_sub_topo[conn] == 2) or np.all(this_sub_topo[conn] == 1):
+                   
+            if np.all(conn) and (np.all(this_sub_topo[conn] == 2) or np.all(this_sub_topo[conn] == 1)):
                 # complete / reference topology, so i don't do anything
                 continue
-
+            
             # so i have a different topology that the reference one
-            topo_1 = (sub_id, tuple([el if el >= 1 else 1 for el in this_sub_topo]))
-            topo_2 = (sub_id, tuple([2 if el == 1 else 1 for el in this_sub_topo]))
+            topo_1 = (sub_id, tuple([el if el > 0 else 0 for el in this_sub_topo]))
+            topo_2 = (sub_id, tuple([2 - el + 1 if el > 0 else 0 for el in this_sub_topo]))
             if topo_1 in self.dict_topo:
                 res[self.dict_topo[topo_1]] = 1.
             elif topo_2 in self.dict_topo:
                 # I need to include both of them because of the convention "disconnected lines
                 # are assigned to bus 1".
                 res[self.dict_topo[topo_2]] = 1.
+            # the next 3 "elif" tries to handle cases where some elements are disconnected
+            # but we can "unambiguously" find a sindle tau that "match" the
+            # topology. We try to do that
+            elif topo_1 in self.disco_topo and topo_2 in self.disco_topo:
+                # TODO i'm pretty sure, because of the symmetry 
+                # code should not fall into the other 2 cases above
+                self._update_topo_when_disco(res, topo_1, sub_id)
+            elif topo_1 in self.disco_topo and (not topo_2 in self.disco_topo):
+                # TODO not sure about the "and not..."
+                self._update_topo_when_disco(res, topo_1, sub_id)
+            elif topo_2 in self.disco_topo and (not topo_1 in self.disco_topo):
+                # TODO not sure about the "and not..."
+                self._update_topo_when_disco(res, topo_2, sub_id)
+            # TODO speed: in the above 3 cases "elif" we use lots of time "obj in dict"
+            # this involves hashing and might be not effective. Best would be to find
+            # the hash once and to use afterwards.
             else:
-                warnings.warn(f"Topology {topo_1} is not found on the topo dictionary")
+                warnings.warn(f"Topology {topo_1} is not found on the topo dictionary, "
+                              f"replaced by \"ref topology\".")
         return res
 
     def _online_list_topo_encode(self, obs):
