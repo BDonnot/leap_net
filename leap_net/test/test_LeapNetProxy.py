@@ -59,8 +59,14 @@ class Test(unittest.TestCase):
         with tempfile.TemporaryDirectory() as path:
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
-                                 kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2))]
+                                 kwargs_tau=[(0, (2, 1, 1)),
+                                             (0, (1, 2, 1)),
+                                             (1, (2, 1, 1, 1, 1, 1)),
+                                             (12, (2, 1, 1, 2)),
+                                             (13, (2, 1, 2)),
+                                             (13, (1, 2, 2)), 
+                                             (1, (2, 1, 2, 1, 2, 1))
+                                             ]
                                  )
             proxy.init([self.obs])
             proxy.save_data(path)
@@ -214,8 +220,12 @@ class Test(unittest.TestCase):
         if proxy is None:
             proxy = ProxyLeapNet(attr_tau=("line_status", "topo_vect",),
                                  topo_vect_to_tau="given_list",
-                                 kwargs_tau=[(0, (2, 1, 1)), (0, (1, 2, 1)), (1, (2, 1, 1, 1, 1, 1)),
-                                             (12, (2, 1, 1, 2)), (13, (2, 1, 2)), (13, (1, 2, 2)), 
+                                 kwargs_tau=[(0, (2, 1, 1)),
+                                             (0, (1, 2, 1)),
+                                             (1, (2, 1, 1, 1, 1, 1)),
+                                             (12, (2, 1, 1, 2)),
+                                             (13, (2, 1, 2)),
+                                             (13, (1, 2, 2)), 
                                              (1, (2, 1, 2, 1, 2, 1))
                                              ]
                                  )
