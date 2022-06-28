@@ -72,7 +72,7 @@ class TestRandomAct1(unittest.TestCase):
         assert res.line_set_status[0] == -1, "line 0 should be disconnected"
         *_, info = self.env.step(res)
         assert not info["is_illegal"], "this action should be legal"
-        assert info["is_ambiguous"], "this action should not be ambiguous"
+        assert not info["is_ambiguous"], "this action should not be ambiguous"
 
     def test_can_sample_more_complex_1(self):
         """i prevent to sample the topo action, it should sample the line one"""
@@ -221,8 +221,8 @@ class TestRandomAct1(unittest.TestCase):
                 act6 += 1
         # the test above is mainly to "check" that it samples randomly among the two possible action, and that
         # it does not always sample the same one
-        assert act0 == 199
-        assert act1 == 197
-        assert act4 == 192
-        assert act5 == 221
-        assert act6 == 191
+        assert act0 == 198
+        assert act1 == 188
+        assert act4 == 213
+        assert act5 == 196
+        assert act6 == 205

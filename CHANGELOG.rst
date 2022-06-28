@@ -1,6 +1,10 @@
 Change Log
 ===========
 
+[0.0.5] - 2022-06-28
+----------------------
+- [IMPROVED] now the topo_vect_to_tau=from_list is also able to handle some
+  topology when some elements are disconnected under some circumstances
 
 [0.0.4] - 2022-06-23
 --------------------
