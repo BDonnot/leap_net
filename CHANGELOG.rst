@@ -4,7 +4,9 @@ Change Log
 -----------------
 - [FIXED] a bug preventing the symmetry to be properly taken into account in `ProxyLeapNet`
   when "topo_vect_to_tau" was not "raw"
-
+- [IMPROVED] now the topo_vect_to_tau=from_list is also able to handle some
+  topology when some elements are disconnected under some circumstances
+  
 [0.0.3] - 2021-08-23
 ----------------------
 - [BREAKING] refactoring the script names to be lower case (class names are still upper case, as in PEP convention)
