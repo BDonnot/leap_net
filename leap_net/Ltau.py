@@ -6,6 +6,8 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
+import copy
+
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import add as tfk_add
@@ -20,15 +22,26 @@ class Ltau(Layer):
     matrix multiplication and `*` the elementwise multiplication.
 
     """
-    def __init__(self, initializer='glorot_uniform', use_bias=True, trainable=True, name=None, **kwargs):
+    def __init__(self,
+                 initializer='glorot_uniform',
+                 use_bias=True,
+                 trainable=True,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 name=None,
+                 **kwargs):
         super(Ltau, self).__init__(trainable=trainable, name=name, **kwargs)
         self.initializer = initializer
         self.use_bias = use_bias
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
         self.e = None
         self.d = None
 
     def build(self, input_shape):
-        is_x, is_tau = input_shape  # is for input_shape
+        is_x, is_tau = input_shape  # is for "input_shape"
         nm_e = None
         nm_d = None
         if self.name is not None:
@@ -38,11 +51,17 @@ class Ltau(Layer):
                        kernel_initializer=self.initializer,
                        use_bias=self.use_bias,
                        trainable=self.trainable,
+                       kernel_regularizer=copy.deepcopy(self.kernel_regularizer),
+                       bias_regularizer=copy.deepcopy(self.bias_regularizer),
+                       activity_regularizer=copy.deepcopy(self.activity_regularizer),
                        name=nm_e)
         self.d = Dense(is_x[-1],
                        kernel_initializer=self.initializer,
                        use_bias=False,
                        trainable=self.trainable,
+                       kernel_regularizer=copy.deepcopy(self.kernel_regularizer),
+                       bias_regularizer=copy.deepcopy(self.bias_regularizer),
+                       activity_regularizer=copy.deepcopy(self.activity_regularizer),
                        name=nm_d)
 
     def get_config(self):
