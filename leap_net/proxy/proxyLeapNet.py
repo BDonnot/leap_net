@@ -22,7 +22,7 @@ with warnings.catch_warnings():
     from tensorflow.keras.layers import Input
 
 from leap_net.proxy.baseNNProxy import BaseNNProxy
-from leap_net.LtauNoAdd import LtauNoAdd
+from leap_net.ltauNoAdd import LtauNoAdd
 
 
 class ProxyLeapNet(BaseNNProxy):

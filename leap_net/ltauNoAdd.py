@@ -6,6 +6,8 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
+import copy
+import tensorflow as tf
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.layers import multiply as tfk_multiply
@@ -21,12 +23,27 @@ class LtauNoAdd(Layer):
     Compare to a full Ltau block, this one does not add back the input.
     """
 
-    def __init__(self, initializer='glorot_uniform', use_bias=True, trainable=True, name=None, **kwargs):
+    def __init__(self,
+                 name=None,
+                 initializer='glorot_uniform',
+                 use_bias=True,
+                 trainable=True,
+                 kernel_regularizer=None,
+                 bias_regularizer=None,
+                 activity_regularizer=None,
+                 penalty_tau=None,
+                 **kwargs):
         super(LtauNoAdd, self).__init__(trainable=trainable, name=name, **kwargs)
         self.initializer = initializer
         self.use_bias = use_bias
+        self.kernel_regularizer = kernel_regularizer
+        self.bias_regularizer = bias_regularizer
+        self.activity_regularizer = activity_regularizer
+        self.use_bias = use_bias
+        self.penalty_tau = float(penalty_tau)
         self.e = None
         self.d = None
+        self.inter = None
 
     def build(self, input_shape):
         is_x, is_tau = input_shape
@@ -39,24 +56,34 @@ class LtauNoAdd(Layer):
                        kernel_initializer=self.initializer,
                        use_bias=self.use_bias,
                        trainable=self.trainable,
+                       kernel_regularizer=copy.deepcopy(self.kernel_regularizer),
+                       bias_regularizer=copy.deepcopy(self.bias_regularizer),
+                       activity_regularizer=copy.deepcopy(self.activity_regularizer),
                        name=nm_e)
         self.d = Dense(is_x[-1],
                        kernel_initializer=self.initializer,
                        use_bias=False,
                        trainable=self.trainable,
+                       kernel_regularizer=copy.deepcopy(self.kernel_regularizer),
+                       bias_regularizer=copy.deepcopy(self.bias_regularizer),
+                       activity_regularizer=copy.deepcopy(self.activity_regularizer),
                        name=nm_d)
 
     def get_config(self):
         config = super().get_config().copy()
         config.update({
             'initializer': self.initializer,
-            'use_bias': self.use_bias
+            'use_bias': self.use_bias,
+            'trainable': self.trainable,
+            'penalty_tau': self.penalty_tau
         })
         return config
 
     def call(self, inputs, **kwargs):
         x, tau = inputs
         tmp = self.e(x)
-        tmp = tfk_multiply([tau, tmp])  # element wise multiplication
-        res = self.d(tmp)  # no addition of x
+        self.inter = tfk_multiply([tau, tmp])  # element wise multiplication
+        res = self.d(self.inter)  # no addition of x
+        if self.penalty_tau is not None:
+            self.add_loss(2. * self.penalty_tau * tf.nn.l2_loss(self.inter))
         return res
