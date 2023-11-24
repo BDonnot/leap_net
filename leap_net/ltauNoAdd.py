@@ -40,7 +40,10 @@ class LtauNoAdd(Layer):
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
         self.use_bias = use_bias
-        self.penalty_tau = float(penalty_tau)
+        if penalty_tau is not None:
+            self.penalty_tau = float(penalty_tau)
+        else:
+            self.penalty_tau = None
         self.e = None
         self.d = None
         self.inter = None
