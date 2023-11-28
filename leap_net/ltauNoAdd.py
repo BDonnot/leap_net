@@ -8,9 +8,7 @@
 
 import copy
 import tensorflow as tf
-from tensorflow.keras.layers import Layer
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import multiply as tfk_multiply
+from tensorflow.keras.layers import Layer, Dense, multiply as tfk_multiply
 
 
 class LtauNoAdd(Layer):
@@ -32,6 +30,7 @@ class LtauNoAdd(Layer):
                  bias_regularizer=None,
                  activity_regularizer=None,
                  penalty_tau=None,
+                 nb_unit_per_tau_dim=1,
                  **kwargs):
         super(LtauNoAdd, self).__init__(trainable=trainable, name=name, **kwargs)
         self.initializer = initializer
@@ -41,12 +40,23 @@ class LtauNoAdd(Layer):
         self.activity_regularizer = activity_regularizer
         self.use_bias = use_bias
         if penalty_tau is not None:
+            if float(penalty_tau) != penalty_tau:
+                raise RuntimeError(f"penalty_tau should be a float, you provided {type(penalty_tau)}")
+            if penalty_tau < 0.:
+                raise RuntimeError(f"penalty_tau should be >= 0.")
             self.penalty_tau = float(penalty_tau)
         else:
             self.penalty_tau = None
         self.e = None
         self.d = None
         self.inter = None
+        self._concat = None
+        
+        if int(nb_unit_per_tau_dim) != nb_unit_per_tau_dim:
+            raise RuntimeError(f"nb_unit_per_tau_dim should be an integer, you provided {type(nb_unit_per_tau_dim)}")
+        if nb_unit_per_tau_dim <= 0:
+            raise RuntimeError(f"nb_unit_per_tau_dim should be >= 1, you provided {nb_unit_per_tau_dim}")
+        self.nb_unit_per_tau_dim = nb_unit_per_tau_dim
 
     def build(self, input_shape):
         is_x, is_tau = input_shape
@@ -55,7 +65,7 @@ class LtauNoAdd(Layer):
         if self.name is not None:
             nm_e = '{}_e'.format(self.name)
             nm_d = '{}_d'.format(self.name)
-        self.e = Dense(is_tau[-1],
+        self.e = Dense(is_tau[-1] * self.nb_unit_per_tau_dim,
                        kernel_initializer=self.initializer,
                        use_bias=self.use_bias,
                        trainable=self.trainable,
@@ -71,7 +81,10 @@ class LtauNoAdd(Layer):
                        bias_regularizer=copy.deepcopy(self.bias_regularizer),
                        activity_regularizer=copy.deepcopy(self.activity_regularizer),
                        name=nm_d)
-
+        
+        if self.nb_unit_per_tau_dim != 1:
+            self._concat = tf.keras.layers.Concatenate()
+            
     def get_config(self):
         config = super().get_config().copy()
         config.update({
@@ -85,6 +98,8 @@ class LtauNoAdd(Layer):
     def call(self, inputs, **kwargs):
         x, tau = inputs
         tmp = self.e(x)
+        if self.nb_unit_per_tau_dim != 1:
+            tau = self._concat([tau for _ in range(self.nb_unit_per_tau_dim)])
         self.inter = tfk_multiply([tau, tmp])  # element wise multiplication
         res = self.d(self.inter)  # no addition of x
         if self.penalty_tau is not None:
