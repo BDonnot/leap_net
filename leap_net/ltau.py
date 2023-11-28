@@ -28,6 +28,7 @@ class Ltau(LtauNoAdd):
                  bias_regularizer=None,
                  activity_regularizer=None,
                  penalty_tau=None,
+                 nb_unit_per_tau_dim=1,
                  **kwargs):
         super(Ltau, self).__init__(name=name,
                                    initializer=initializer,
@@ -37,6 +38,7 @@ class Ltau(LtauNoAdd):
                                    bias_regularizer=bias_regularizer,
                                    activity_regularizer=activity_regularizer,
                                    penalty_tau=penalty_tau,
+                                   nb_unit_per_tau_dim=nb_unit_per_tau_dim,
                                    **kwargs
                                    )
 

@@ -8,7 +8,9 @@
 
 import copy
 import tensorflow as tf
-from tensorflow.keras.layers import Layer, Dense, multiply as tfk_multiply
+from tensorflow.keras.layers import (Layer,
+                                     Dense,
+                                     multiply as tfk_multiply)
 
 
 class LtauNoAdd(Layer):
