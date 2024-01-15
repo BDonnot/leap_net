@@ -7,10 +7,10 @@
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
 import copy
-import tensorflow as tf
-from tensorflow.keras.layers import (Layer,
-                                     Dense,
-                                     multiply as tfk_multiply)
+import keras
+from keras.layers import (Layer,
+                          Dense,
+                          multiply as keras_multiply)
 
 
 class LtauNoAdd(Layer):
@@ -21,6 +21,9 @@ class LtauNoAdd(Layer):
     matrix multiplication and `*` the elementwise multiplication.
 
     Compare to a full Ltau block, this one does not add back the input.
+    
+    .. info::
+        This is the keras >= 3.0 version, compatible with tensorflow, pytorch and jax !
     """
 
     def __init__(self,
@@ -85,7 +88,7 @@ class LtauNoAdd(Layer):
                        name=nm_d)
         
         if self.nb_unit_per_tau_dim != 1:
-            self._concat = tf.keras.layers.Concatenate()
+            self._concat = keras.layers.Concatenate()
             
     def get_config(self):
         config = super().get_config().copy()
@@ -97,13 +100,13 @@ class LtauNoAdd(Layer):
         })
         return config
 
-    def call(self, inputs, **kwargs):
-        x, tau = inputs
+    def call(self, features):
+        x, tau = features
         tmp = self.e(x)
         if self.nb_unit_per_tau_dim != 1:
             tau = self._concat([tau for _ in range(self.nb_unit_per_tau_dim)])
-        self.inter = tfk_multiply([tau, tmp])  # element wise multiplication
+        self.inter = keras_multiply([tau, tmp])  # element wise multiplication
         res = self.d(self.inter)  # no addition of x
         if self.penalty_tau is not None:
-            self.add_loss(2. * self.penalty_tau * tf.nn.l2_loss(self.inter))
+            self.add_loss(2. * self.penalty_tau * keras.ops.sum(keras.ops.square(x)))
         return res

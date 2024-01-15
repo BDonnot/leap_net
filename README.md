@@ -80,10 +80,7 @@ The most simple way to use the LEAP Net, and especially the Ltau module is to de
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-from tensorflow.keras.layers import Layer
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import add as tfk_add
-from tensorflow.keras.layers import multiply as tfk_multiply
+from keras.layers import (Layer, Dense, add as keras_add, multiply as keras_multiply)
 
 
 class Ltau(Layer):
@@ -122,16 +119,19 @@ class Ltau(Layer):
     def call(self, inputs):
         x, tau = inputs
         tmp = self.e(x)
-        tmp = tfk_multiply([tau, tmp])  # element wise multiplication
+        tmp = keras_multiply([tau, tmp])  # element wise multiplication
         tmp = self.d(tmp)
-        res = tfk_add([x, tmp])
+        res = keras_add([x, tmp])
         return res
+
 ```
+
 This is the complete code of the Ltau module that you can use as any keras layer.
 
 
 ##### Clean installation (from source)
-We also provide a simple implement of the LEAP Net that can be use as a any `tf.keras` layer. First you have to 
+
+We also provide a simple implement of the LEAP Net that can be use as a any `keras` layer. First you have to 
 download this github repository:
 ```bash
 git clone https://github.com/BDonnot/leap_net.git
@@ -139,7 +139,7 @@ cd leap_net
 ```
 Then you need to install it (we strongly encourage to install it in a virtual envrionment):
 ```bash
-pip install -U .
+pip install -U -e .
 ```
 Then, **as all python packages installed from source** you need to change the current working directory to use this
 module:
@@ -158,9 +158,8 @@ have at your disposal:
 - a `Y` matrix of dimentsion (nb_row, dim_x)
 
 ```python
-import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras.models import Model
+from keras.layers import Input
+from keras.models import Model
 from leap_net import Ltau  # this import might change if you use the "quick and dirty way".
 
 # create the keras model
@@ -170,7 +169,7 @@ res_Ltau = Ltau()((x, tau))
 model = Model(inputs=[x, tau], outputs=[res_Ltau])
 
 # "compile" the model with a given optimizer
-adam_ = tf.optimizers.Adam(lr=1e-3)
+adam_ = keras.optimizers.Adam(lr=1e-3)
 model.compile(optimizer=adam_, loss='mse')
 # train it
 model.fit(x=[X, T], y=[Y], epochs=200, batch_size=32, verbose=False)
@@ -181,10 +180,10 @@ y_hat = model.predict([X, T])
 
 Of course, it is more than recommended to first encode your input data `X` with an encore denoted by `E` on the paper
 and then decode them with a "decoder" denoted by `D` in the papers. An example of such a model is:
+
 ```python
-import tensorflow as tf
-from tensorflow.keras.layers import Input, Activation, Dense
-from tensorflow.keras.models import Model
+from keras.layers import Input, Activation, Dense
+from keras.models import Model
 from leap_net import Ltau  # this import might change if you use the "quick and dirty way".
 
 # create the keras model
@@ -212,7 +211,7 @@ output = Dense(dim_y)(layer4)
 model = Model(inputs=[x, tau], outputs=[output])
 
 # "compile" the model with a given optimizer
-adam_ = tf.optimizers.Adam(lr=1e-3)
+adam_ = keras.optimizers.Adam(lr=1e-3)
 model.compile(optimizer=adam_, loss='mse')
 # train it
 model.fit(x=[X, T], y=[Y], epochs=200, batch_size=32, verbose=False)

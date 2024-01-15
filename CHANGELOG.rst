@@ -1,6 +1,18 @@
 Change Log
 ===========
 
+[0.1.0] - 2024-01-15
+----------------------
+- [BREAKING] refactoring of the code to use keras >= 3.0 (compatible with 
+  tensorflow, pytorch and jax) instead of the now deprecated "tensroflow.keras"
+  It means that if you did `from leap_net import Ltau` you don't have to change anything.
+  But if you did `from leap_net.ltau import Ltau` then you need to either do `from leap_net import Ltau`
+  to use the version using keras >= 3 or `from leap_net.tf_keras import Ltau` for using the 
+  oldest (and deprecated) version of the leap_net using tensorflow keras.
+- [BREAKING] This is the same for the "kerasutils" module. Now you need to do `from leap_net.tf_keras.kerasutils import XXX`
+  instead of `from leap_net.kerasutils import XXX`. This module has not been ported to keras >= 3.0 yet but will be in the short
+  term.
+
 [0.0.5] - 2022-06-28
 ----------------------
 - [IMPROVED] now the topo_vect_to_tau=from_list is also able to handle some

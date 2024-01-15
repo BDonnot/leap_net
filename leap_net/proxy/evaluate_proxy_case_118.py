@@ -8,7 +8,7 @@
 
 from leap_net.proxy.utils import DEFAULT_METRICS
 
-from leap_net.ResNetLayer import ResNetLayer
+from leap_net.tf_keras import ResNetLayer
 from leap_net.proxy.evaluate_proxy_case_14 import main as main_14
 
 

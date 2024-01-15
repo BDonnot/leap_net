@@ -6,12 +6,15 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-from leap_net.ltau import Ltau
-from leap_net.ltauNoAdd import LtauNoAdd
-from leap_net.ResNetLayer import ResNetLayer
+__version__ = "0.1.0"
+__all__ = []
 
-__version__ = "0.0.5"
-__all__ = ["Ltau", "ResNetLayer", "LtauNoAdd"]
+try:
+    from leap_net.keras import (Ltau, LtauNoAdd, ResNetLayer)
+    __all__ += ["Ltau", "ResNetLayer", "LtauNoAdd"]
+except ImportError:
+    pass
+
 
 try:
     from leap_net.generate_data import generate_dataset
@@ -20,7 +23,7 @@ except ImportError:
     pass
 
 try:
-    from leap_net.kerasutils import MultipleDasetCallBacks
+    from leap_net.tf_keras.kerasutils import MultipleDasetCallBacks
     __all__ += ["MultipleDasetCallBacks"]
 except ImportError:
     pass

@@ -11,8 +11,8 @@ import json
 import numpy as np
 from datetime import datetime
 
-from leap_net import Ltau, ResNetLayer
-from leap_net.kerasutils import MultipleDasetCallBacks
+from leap_net.tf_keras import Ltau, ResNetLayer
+from leap_net.tf_keras.kerasutils import MultipleDasetCallBacks
 
 import tensorflow as tf
 from tensorflow import keras

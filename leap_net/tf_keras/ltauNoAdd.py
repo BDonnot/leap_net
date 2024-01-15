@@ -7,10 +7,10 @@
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
 import copy
-import keras_core as keras
-from keras_core.layers import (Layer,
-                               Dense,
-                               multiply as tfk_multiply)
+import tensorflow as tf
+from tensorflow.keras.layers import (Layer,
+                                     Dense,
+                                     multiply as tfk_multiply)
 
 
 class LtauNoAdd(Layer):
@@ -22,7 +22,11 @@ class LtauNoAdd(Layer):
 
     Compare to a full Ltau block, this one does not add back the input.
     
-    keras_core version !
+    .. warning::
+        This is a legacy implementation based on tensorflow_keras (`import tensorflow.keras as keras`)
+        which should be avoided and replaced by the most recent LtauNoAdd class (`from leap_net import LtauNoAdd`) 
+        that uses the new keras framework, compatible with tensorflow, pytorch AND jax.
+        
     """
 
     def __init__(self,
@@ -87,7 +91,7 @@ class LtauNoAdd(Layer):
                        name=nm_d)
         
         if self.nb_unit_per_tau_dim != 1:
-            self._concat = keras.layers.Concatenate()
+            self._concat = tf.keras.layers.Concatenate()
             
     def get_config(self):
         config = super().get_config().copy()
@@ -99,13 +103,13 @@ class LtauNoAdd(Layer):
         })
         return config
 
-    def call(self, features):
-        x, tau = features
+    def call(self, inputs, **kwargs):
+        x, tau = inputs
         tmp = self.e(x)
         if self.nb_unit_per_tau_dim != 1:
             tau = self._concat([tau for _ in range(self.nb_unit_per_tau_dim)])
         self.inter = tfk_multiply([tau, tmp])  # element wise multiplication
         res = self.d(self.inter)  # no addition of x
         if self.penalty_tau is not None:
-            self.add_loss(2. * self.penalty_tau * keras.ops.sum(keras.ops.square(x)))
+            self.add_loss(2. * self.penalty_tau * tf.nn.l2_loss(self.inter))
         return res

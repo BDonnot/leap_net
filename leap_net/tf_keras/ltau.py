@@ -8,7 +8,7 @@
 
 from tensorflow.keras.layers import add as tfk_add
 
-from leap_net.ltauNoAdd import LtauNoAdd
+from leap_net.tf_keras.ltauNoAdd import LtauNoAdd
 
 
 class Ltau(LtauNoAdd):
@@ -18,6 +18,11 @@ class Ltau(LtauNoAdd):
     This kind of leap net layer computes, from their input `x`: `d.(e.x * tau)` where `.` denotes the
     matrix multiplication and `*` the elementwise multiplication.
 
+    .. warning::
+        This is a legacy implementation based on tensorflow_keras (`import tensorflow.keras as keras`)
+        which should be avoided and replaced by the most recent LtauNoAdd class (`from leap_net import LtauNoAdd`) 
+        that uses the new keras framework, compatible with tensorflow, pytorch AND jax.
+        
     """
     def __init__(self,
                  name=None,

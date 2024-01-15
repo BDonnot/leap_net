@@ -11,7 +11,7 @@ import os
 import matplotlib.pyplot as plt
 from leap_net.proxy.utils import create_env, reproducible_exp, DEFAULT_METRICS
 
-from leap_net.ResNetLayer import ResNetLayer
+from leap_net.tf_keras import ResNetLayer
 from leap_net.agents import RandomN1, RandomN2
 from leap_net.proxy.agentWithProxy import AgentWithProxy
 from leap_net.proxy.proxyLeapNet import ProxyLeapNet
