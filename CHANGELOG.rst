@@ -1,6 +1,11 @@
 Change Log
 ===========
 
+[0.1.2] - 202x-yy-zz
+--------------------
+- [ADDED] a file to make tests on push
+- [IMPROVED] "test=True" is added in all the environment in the CI
+
 [0.1.1] - 2024-02-21
 --------------------
 - [FIXED] Broken tests

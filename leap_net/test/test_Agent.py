@@ -26,7 +26,7 @@ class Test(unittest.TestCase):
         param.NB_TIMESTEP_COOLDOWN_LINE = 0
         param.NB_TIMESTEP_COOLDOWN_SUB = 0
 
-        self.env = grid2op.make("l2rpn_case14_sandbox", param=param)
+        self.env = grid2op.make("l2rpn_case14_sandbox", test=True, param=param)
         self.obs = self.env.reset()
 
     def test_RandomSub1(self):

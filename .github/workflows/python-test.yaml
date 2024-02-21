@@ -1,0 +1,49 @@
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Test Python Package
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.10'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+    - name: Build package
+      run: python -m build
+    - name: Install built package
+      run: |
+        pip install tensorflow
+        find dist/ -name leap_net\*.whl -type f -exec pip install {}[test] \;
+# If you install TensorFlow, critically, you should reinstall Keras 3 afterwards. 
+# This is a temporary step while TensorFlow is pinned to Keras 2, and will no 
+# longer be necessary after TensorFlow 2.16. The cause is that tensorflow==2.15 
+# will overwrite your Keras installation with keras==2.15.
+    - name: test package
+      run: |
+        cd leap_net/test
+        python -m unittest discover

@@ -46,7 +46,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
     
 setup(name='leap_net',
-      version='0.1.1',
+      version='0.1.2.dev0',
       description='An implementation in keras 3.0 (and tensorflow keras) of the LeapNet model',
       long_description=long_description,
       long_description_content_type="text/markdown",
