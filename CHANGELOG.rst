@@ -1,6 +1,13 @@
 Change Log
 ===========
 
+[0.1.1] - 2024-02-21
+--------------------
+- [FIXED] Broken tests
+- [ADDED] test of both keras v3 and tf_keras implementation (when appropriate)
+  (*eg* not for python 3.8 where keras v3 is not available)
+- [ADDED] automatic upload on pypi on new version
+
 [0.1.0] - 2024-01-15
 ----------------------
 - [BREAKING] refactoring of the code to use keras >= 3.0 (compatible with 

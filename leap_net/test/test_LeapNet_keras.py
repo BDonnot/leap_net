@@ -13,22 +13,29 @@ import unittest
 logging.disable(logging.WARNING)
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 
-import tensorflow as tf
-from tensorflow.keras.layers import Input
-from tensorflow.keras.models import Model
+try:
+    import keras
+    from keras.layers import Input
+    from keras.models import Model
+    from leap_net.keras import Ltau
+except ImportError:
+    pass
 
-from leap_net import Ltau
 import pdb
+
+import sys
 
 
 class Test(unittest.TestCase):
     def setUp(self):
+        if sys.version_info.major == 3 and sys.version_info.minor == 8:
+            self.skipTest("Keras v3 not available on python 3.8")
         self.tol = 1e-5  # use to compare results that should be strictly equal, up to numerical error
         self.tol_learn = 1e-2  # use to compare results from a test set
 
         # to have "reproducible" results
         np.random.seed(1)
-        tf.random.set_seed(1)
+        keras.utils.set_random_seed(1)
 
     def test_ok_tau0(self):
         dim_x = 10
@@ -117,7 +124,7 @@ class Test(unittest.TestCase):
         res_model = Ltau()((x, tau))
         model = Model(inputs=[x, tau], outputs=[res_model])
 
-        adam_ = tf.optimizers.Adam(lr=1e-3)
+        adam_ = keras.optimizers.Adam(learning_rate=1e-3)
         model.compile(optimizer=adam_, loss='mse')
         ## train it
         model.fit(x=[X_train, TAU_train], y=[Y_train], epochs=200, batch_size=32, verbose=False)

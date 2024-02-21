@@ -6,6 +6,7 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
+import sys
 import setuptools
 from setuptools import setup
 
@@ -21,17 +22,31 @@ pkgs = {
             "grid2op",
             "pandas",
             "tqdm",
-            'sklearn',
+            'scikit-learn',
             "tensorflow"
         ]
     }
 }
 
+if sys.version_info.major == 3 and sys.version_info.minor == 8:
+    # no keras v3 in python 3.8
+    pkgs["required"] = [el for el in pkgs["required"] if not "keras" in el]
+    pkgs["required"].append("tensorflow")
+    
+    
+pkgs["extras"]["test"] = [el for el in pkgs["extras"]["recommended"] if not "tensorflow" in el]
+# from here https://keras.io/getting_started/
+# If you install TensorFlow, critically, you should reinstall Keras 3 afterwards. 
+# This is a temporary step while TensorFlow is pinned to Keras 2, 
+# and will no longer be necessary after TensorFlow 2.16. The cause is that tensorflow==2.15 
+# will overwrite your Keras installation with keras==2.15.
+# This is why in the tests I just skip tensorflow for now. Will be fixed later
+
 with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
     
 setup(name='leap_net',
-      version='0.1.0',
+      version='0.1.1',
       description='An implementation in keras 3.0 (and tensorflow keras) of the LeapNet model',
       long_description=long_description,
       long_description_content_type="text/markdown",
