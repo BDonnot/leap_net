@@ -12,6 +12,7 @@ Change Log
 - [BREAKING] This is the same for the "kerasutils" module. Now you need to do `from leap_net.tf_keras.kerasutils import XXX`
   instead of `from leap_net.kerasutils import XXX`. This module has not been ported to keras >= 3.0 yet but will be in the short
   term.
+- [BREAKING] drop support of python 3.6 and 3.7
 
 [0.0.5] - 2022-06-28
 ----------------------
