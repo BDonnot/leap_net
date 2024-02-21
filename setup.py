@@ -11,16 +11,18 @@ from setuptools import setup
 
 pkgs = {
     "required": [
-        "tensorflow",
+        "keras>=3",
         "numpy",
-        "scipy"
+        "scipy",
+        "packaging"
     ],
     "extras": {
         "recommended": [
             "grid2op",
             "pandas",
             "tqdm",
-            'sklearn'
+            'sklearn',
+            "tensorflow"
         ]
     }
 }
@@ -29,8 +31,8 @@ with open("README.md", "r", encoding="utf-8") as fh:
     long_description = fh.read()
     
 setup(name='leap_net',
-      version='0.0.5',
-      description='An implementation in tensorflow / keras of the LeapNet model',
+      version='0.1.0',
+      description='An implementation in keras 3.0 (and tensorflow keras) of the LeapNet model',
       long_description=long_description,
       long_description_content_type="text/markdown",
       classifiers=[

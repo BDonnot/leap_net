@@ -6,15 +6,10 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-from tensorflow.keras.layers import Layer
-from tensorflow.keras.layers import Dense
-from tensorflow.keras.layers import Activation
-from tensorflow.keras.layers import add as tfk_add
-
-
-import tensorflow as tf
-
-import pdb
+from keras.layers import (Layer,
+                          Dense,
+                          Activation,
+                          add as keras_add)
 
 
 class ResNetLayer(Layer):
@@ -22,8 +17,10 @@ class ResNetLayer(Layer):
     This layer implements a "ResNet block". If inputs are `x` the "resnet block" here produce the outputs:
     `y` = `x` + `act( Dense(dim_x)(act(Dense(layer_size)(x))) )`
 
-    This is experimental, and any usage of another resnet implementation is probably better suited than this one.
-
+    This is rather experimental, and any usage of another resnet implementation is probably better suited than this one.
+    
+    .. info::
+        This is the keras >= 3.0 version, compatible with tensorflow, pytorch and jax !
     """
     def __init__(self,
                  units,
@@ -77,5 +74,5 @@ class ResNetLayer(Layer):
         tmp = self.d(tmp)
         if self.activation is not None:
             tmp = Activation(self.activation)(tmp)
-        res = tfk_add([inputs, tmp])
+        res = keras_add([inputs, tmp])
         return res

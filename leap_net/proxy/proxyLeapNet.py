@@ -6,7 +6,6 @@
 # SPDX-License-Identifier: MPL-2.0
 # This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
 
-import copy
 import warnings
 import numpy as np
 import itertools
@@ -22,7 +21,7 @@ with warnings.catch_warnings():
     from tensorflow.keras.layers import Input
 
 from leap_net.proxy.baseNNProxy import BaseNNProxy
-from leap_net.LtauNoAdd import LtauNoAdd
+from leap_net.tf_keras import LtauNoAdd
 
 
 class ProxyLeapNet(BaseNNProxy):

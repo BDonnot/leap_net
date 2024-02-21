@@ -16,7 +16,6 @@ from tqdm import tqdm
 from collections.abc import Iterable
 from grid2op.Agent import BaseAgent
 
-from leap_net.proxy.proxyLeapNet import ProxyLeapNet
 import numpy as np
 
 try:
