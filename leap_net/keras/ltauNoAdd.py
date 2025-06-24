@@ -15,14 +15,14 @@ from keras.layers import (Layer,
 
 class LtauNoAdd(Layer):
     """
-    This layer implements the Ltau layer.
+    This layer implements the Ltau (without the final addition) layer in keras.
 
     This kind of leap net layer computes, from their input `x`: `d.(e.x * tau)` where `.` denotes the
     matrix multiplication and `*` the elementwise multiplication.
 
     Compare to a full Ltau block, this one does not add back the input.
     
-    .. info::
+    .. note::
         This is the keras >= 3.0 version, compatible with tensorflow, pytorch and jax !
     """
 
@@ -43,7 +43,6 @@ class LtauNoAdd(Layer):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
-        self.use_bias = use_bias
         if penalty_tau is not None:
             if float(penalty_tau) != penalty_tau:
                 raise RuntimeError(f"penalty_tau should be a float, you provided {type(penalty_tau)}")

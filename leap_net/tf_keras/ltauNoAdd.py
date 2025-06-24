@@ -46,7 +46,6 @@ class LtauNoAdd(Layer):
         self.kernel_regularizer = kernel_regularizer
         self.bias_regularizer = bias_regularizer
         self.activity_regularizer = activity_regularizer
-        self.use_bias = use_bias
         if penalty_tau is not None:
             if float(penalty_tau) != penalty_tau:
                 raise RuntimeError(f"penalty_tau should be a float, you provided {type(penalty_tau)}")

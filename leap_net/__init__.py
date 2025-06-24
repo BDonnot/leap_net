@@ -13,6 +13,7 @@ try:
     from leap_net.keras import (Ltau, LtauNoAdd, ResNetLayer)
     __all__ += ["Ltau", "ResNetLayer", "LtauNoAdd"]
 except ImportError:
+    # keras is not installed
     pass
 
 
@@ -20,16 +21,19 @@ try:
     from leap_net.generate_data import generate_dataset
     __all__ += ["generate_dataset"]
 except ImportError:
+    # grid2op is not installed
     pass
 
 try:
     from leap_net.tf_keras.kerasutils import MultipleDasetCallBacks
     __all__ += ["MultipleDasetCallBacks"]
 except ImportError:
+    # tensorflow (tensorfboard) is not installed
     pass
 
 try:
     from leap_net.proxy import BaseProxy, BaseNNProxy, ProxyBackend, ProxyLeapNet, AgentWithProxy
     __all__ += ["BaseProxy", "BaseNNProxy", "ProxyBackend", "ProxyLeapNet", "AgentWithProxy"]
 except ImportError:
+    # grid2op is not installed
     pass

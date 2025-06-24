@@ -4,7 +4,7 @@
 # If a copy of the Mozilla Public License, version 2.0 was not distributed with this file,
 # you can obtain one at http://mozilla.org/MPL/2.0/.
 # SPDX-License-Identifier: MPL-2.0
-# This file is part of leap_net, leap_net a keras implementation of the LEAP Net model.
+# This file is part of leap_net, leap_net an implementation of the LEAP Net model.
 
 import sys
 import setuptools
@@ -12,10 +12,9 @@ from setuptools import setup
 
 pkgs = {
     "required": [
-        "keras>=3",
         "numpy",
-        "scipy",
-        "packaging"
+        # "scipy",
+        # "packaging"
     ],
     "extras": {
         "recommended": [
@@ -23,7 +22,15 @@ pkgs = {
             "pandas",
             "tqdm",
             'scikit-learn',
+        ],
+        "keras": [
+            "keras>=3",
+        ],
+        "tensorflow": [
             "tensorflow"
+        ],
+        "pytorch": [
+            "pytorch"
         ]
     }
 }

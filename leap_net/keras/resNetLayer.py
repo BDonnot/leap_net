@@ -14,12 +14,14 @@ from keras.layers import (Layer,
 
 class ResNetLayer(Layer):
     """
-    This layer implements a "ResNet block". If inputs are `x` the "resnet block" here produce the outputs:
+    This layer implements a "ResNet block" in keras. 
+    
+    If inputs are `x` the "resnet block" here produce the outputs:
     `y` = `x` + `act( Dense(dim_x)(act(Dense(layer_size)(x))) )`
 
     This is rather experimental, and any usage of another resnet implementation is probably better suited than this one.
     
-    .. info::
+    .. note::
         This is the keras >= 3.0 version, compatible with tensorflow, pytorch and jax !
     """
     def __init__(self,

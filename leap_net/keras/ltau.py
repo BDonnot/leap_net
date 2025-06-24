@@ -13,12 +13,12 @@ from leap_net.keras.ltauNoAdd import LtauNoAdd
 
 class Ltau(LtauNoAdd):
     """
-    This layer implements the Ltau layer.
+    This layer implements the Ltau layer in keras.
 
     This kind of leap net layer computes, from their input `x`: `d.(e.x * tau)` where `.` denotes the
     matrix multiplication and `*` the elementwise multiplication.
 
-    .. info::
+    .. note::
         This is the keras >= 3.0 version, compatible with tensorflow, pytorch and jax !
 
     """
