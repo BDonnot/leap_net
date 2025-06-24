@@ -63,11 +63,11 @@ class LtauNoAdd(nn.Module):
         self.nb_unit_per_tau_dim = nb_unit_per_tau_dim
         
         # build the thing
-        nm_e = None
-        nm_d = None
-        if self.name is not None:
-            nm_e = '{}_e'.format(self.name)
-            nm_d = '{}_d'.format(self.name)
+        # nm_e = None
+        # nm_d = None
+        # if self.name is not None:
+        #     nm_e = '{}_e'.format(self.name)
+        #     nm_d = '{}_d'.format(self.name)
         self.e = nn.Linear(input_shape,
                            tau_shape * self.nb_unit_per_tau_dim,
                            bias=self.use_bias
@@ -97,9 +97,9 @@ class LtauNoAdd(nn.Module):
         tmp = self.e(inp_)
         if self.nb_unit_per_tau_dim != 1:
             # duplicate the tau to have as many units as you want
-            tau = torch.concat([tau for _ in range(self.nb_unit_per_tau_dim)])
+            tau = torch.concat([tau for _ in range(self.nb_unit_per_tau_dim)], dim=1)
         self.inter = torch.mul(tau, tmp)  # element wise multiplication
-        res = self.d(self.inter)  # no addition of x
+        res = self.d(self.inter)  # no addition of inp_
         if self.penalty_tau is not None:
             raise RuntimeError("This is not supported for pytorch at the moment")
             self.add_loss(2. * self.penalty_tau * keras.ops.sum(keras.ops.square(inp_)))
